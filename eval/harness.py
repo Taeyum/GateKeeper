@@ -218,7 +218,11 @@ async def run_once(
         result = await asyncio.wait_for(graph.ainvoke(initial_state(item, masked_text), config), timeout)
     except Exception as exc:  # 측정 도구라서 어떤 실패든 오류 기록으로 바꾼다
         return SingleRun(
-            prediction=Prediction(error=type(exc).__name__),
+            # 진단 문장은 판정을 못 만든 이유를 찾으려는 것이다. 어디에 남길지는 build_record가 split으로 정한다.
+            prediction=Prediction(
+                error=type(exc).__name__,
+                error_detail=exc.diagnosis() if isinstance(exc, ReviewIncomplete) else None,
+            ),
             latency_s=time.perf_counter() - started,
             usage=collector.snapshot(),
             counters={},
@@ -269,6 +273,8 @@ def build_record(split: str, case: CaseScore, run: SingleRun, judge: JudgeScore 
             "structured": run.prediction.structured.model_dump(mode="json") if run.prediction.structured else None,
             "recommendation": rec.model_dump(mode="json") if rec else None,
             "judge_reason": judge.reason if judge else None,
+            # 판정을 못 만든 이유 (N1). 대상 값, 작업 구간처럼 본문에서 온 값이 들어 있어 dev에만 남긴다.
+            "error_detail": run.prediction.error_detail,
         }
     return record
 
@@ -279,6 +285,8 @@ def console_run_line(split: str, index: int, total: int, case: CaseScore, run: S
         return f"진행 {index}/{total}"
     mark = "O" if case.verdict_correct else "X"
     extra = f" error={case.error}" if case.error else ""
+    if run.prediction.error_detail:
+        extra += f" ({run.prediction.error_detail})"
     return (
         f"[{index}/{total}] {case.request_id} rep{case.rep} 판정 {mark} (정답 {case.verdict_gold}, 예측 {case.verdict_pred}) "
         f"위반 정답={','.join(case.violations_gold) or '-'} 예측={','.join(case.violations_pred) or '-'} "

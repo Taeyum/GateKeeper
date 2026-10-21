@@ -12,6 +12,7 @@ from app.agent.nodes.decide import (
     assemble_alternative,
     build_citations,
     fallback_explanation,
+    incomplete_detail,
     missing_start_sentence,
     render_decide_input,
     retry_message,
@@ -372,6 +373,25 @@ async def test_규정_검사를_얻지_못했으면_판정을_만들지_않는�
         await run(state_for("REQ-D01", policy=unavailable), [draft()])
     with pytest.raises(ReviewIncomplete):
         await run(state_for("REQ-D01", policy=SubagentResult(status="ok", tool_output=None)), [draft()])
+
+
+async def test_판정을_못_만들면_원인을_찾을_진단_정보를_단다():  # N1
+    unavailable = SubagentResult(status="unavailable", summary="규정 검사: 확인 불가")
+    errors = ["policy_agent: 규정 검사 실패 (MCPToolError)", "impact_agent: 조회 실패 (MCPToolError)"]
+    with pytest.raises(ReviewIncomplete) as error:
+        await run(state_for("REQ-D01", policy=unavailable, errors=errors), [draft()])
+
+    assert error.value.stage == "decide"
+    assert "policy_agent: 규정 검사 실패 (MCPToolError); impact_agent: 조회 실패 (MCPToolError)" in error.value.detail
+    assert "구조화 작업 구간 start=2026-10-30T20:00:00+09:00, end=2026-10-30T21:00:00+09:00" in error.value.detail
+    assert "2026" not in str(error.value) and "payments" not in str(error.value)  # 메시지에는 요청 값이 없다
+    assert error.value.diagnosis() == f"decide: {error.value.detail}"
+
+
+def test_진단_정보는_오류_기록이나_구조화_결과가_없어도_만들어진다():
+    assert incomplete_detail({}) == "오류 기록 없음 / 구조화 결과 없음"
+    no_window = request_of("REQ-D06", start=None, end=None)
+    assert incomplete_detail({"structured": no_window}) == "오류 기록 없음 / 구조화 작업 구간 start=None, end=None"
 
 
 async def test_설명_LLM이_실패하면_코드가_만든_설명으로_대신하고_판정은_그대로다():

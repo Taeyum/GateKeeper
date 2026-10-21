@@ -243,8 +243,9 @@ async def test_재시도로_작업_시각을_찾으면_정상_판정이다(mcp):
 async def test_대상이_CMDB에_없으면_판정을_만들지_않는다(mcp):
     wrong = label("REQ-D06", target="payment-service")
     queue("REQ-D06", parse=[wrong, wrong])
-    with pytest.raises(ReviewIncomplete):
+    with pytest.raises(ReviewIncomplete) as error:
         await run(build_graph("v1", mcp=mcp), "REQ-D06")
+    assert error.value.stage == "parse_request"
 
 
 async def test_규정_검사를_못_얻으면_판정을_만들지_않는다(mcp, monkeypatch):
@@ -253,8 +254,35 @@ async def test_규정_검사를_못_얻으면_판정을_만들지_않는다(mcp,
 
     monkeypatch.setattr(mcp, "check_policy", down)
     queue("REQ-D01")
-    with pytest.raises(ReviewIncomplete):
+    with pytest.raises(ReviewIncomplete) as error:
         await run(build_graph("v1", mcp=mcp), "REQ-D01")
+    # 서브에이전트의 오류 종류가 진단 정보에 실려 온다 (N1)
+    assert error.value.stage == "decide" and "policy_agent: 규정 검사 실패 (MCPTimeoutError)" in error.value.detail
+
+
+@pytest.mark.parametrize("request_id", ["REQ-D01", "REQ-D07"])
+async def test_종료가_시작과_같은_구조화는_서브에이전트가_실패하기_전에_parse_request에서_멈춘다(mcp, request_id):  # N1
+    """수정 전에는 이 입력이 classify를 지나 policy_agent와 impact_agent의 Tool 호출을 함께 실패시키고
+    decide에서 ReviewIncomplete가 됐다 (LLM 호출 2회). 지금은 구조화 단계에서 다시 묻고, 그래도 틀리면 거기서 멈춘다."""
+    start = label(request_id).start
+    broken = label(request_id, end=start)
+    queue(request_id, parse=[broken, broken])
+    item, collector = gold(request_id), UsageCollector()
+    with pytest.raises(ReviewIncomplete) as error:
+        await build_graph("v1", mcp=mcp).ainvoke(
+            initial_state(item, item.text), {"callbacks": [collector], "configurable": {"thread_id": f"test-{request_id}"}}
+        )
+    usage = collector.snapshot()
+    assert error.value.stage == "parse_request"
+    assert usage.llm_calls == 2 and set(usage.by_model) == {"fake-main"}  # classify(small)는 시작도 못 했다
+
+
+async def test_종료가_틀린_첫_구조화도_다시_물으면_정상_판정이_나온다(mcp):  # N1
+    fixed = label("REQ-D01")
+    queue("REQ-D01", parse=[label("REQ-D01", end=fixed.start), fixed])
+    result, _ = await run(build_graph("v1", mcp=mcp), "REQ-D01")
+    assert result["structured"] == fixed and result["recommendation"].verdict == "반려"
+    assert result["metrics"]["required_field_retries"] == 1
 
 
 async def test_영향도를_못_얻어도_판정은_나오고_경고만_붙는다(mcp, monkeypatch):

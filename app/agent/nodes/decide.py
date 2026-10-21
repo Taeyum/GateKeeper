@@ -81,6 +81,21 @@ def missing_start_sentence(rule_ids: list[str]) -> str:
     return f"작업 시각이 없어 시간 조항({', '.join(rule_ids)})을 확인하지 못했다. 승인 전에 작업 시각을 확인해야 한다."
 
 
+def incomplete_detail(state: GKState) -> str:
+    """규정 검사를 얻지 못한 이유를 찾으려는 진단 문장 (ReviewIncomplete.detail, dev 기록 전용).
+
+    하위 오류 종류(errors)와 구조화된 작업 구간을 함께 적는다. 작업 구간이 틀리면 check_policy와 get_calendar가
+    같이 실패하므로 둘을 같이 봐야 원인이 보인다.
+    """
+    errors = "; ".join(state.get("errors", [])) or "오류 기록 없음"
+    request = state.get("structured")
+    if request is None:
+        return f"{errors} / 구조화 결과 없음"
+    start = request.start.isoformat() if request.start else None
+    end = request.end.isoformat() if request.end else None
+    return f"{errors} / 구조화 작업 구간 start={start}, end={end}"
+
+
 def build_citations(check: PolicyCheckResult, emergency_is_valid: bool, standard_id: str | None) -> list[str]:
     ids = [v.rule_id for v in check.violations]
     if emergency_is_valid:
@@ -199,7 +214,9 @@ def render_decide_input(
 async def decide(state: GKState, config: RunnableConfig) -> dict:
     policy: SubagentResult = state["policy"]
     if policy.status != "ok" or policy.tool_output is None:
-        raise ReviewIncomplete("규정 검사 결과를 얻지 못해 판정을 만들지 않는다.")
+        raise ReviewIncomplete(
+            "규정 검사 결과를 얻지 못해 판정을 만들지 않는다.", stage="decide", detail=incomplete_detail(state)
+        )
     request: ChangeRequest = state["structured"]
     submitted_at = datetime.fromisoformat(state["submitted_at"])
     rules = load_rules()

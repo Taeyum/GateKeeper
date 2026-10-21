@@ -44,6 +44,9 @@ class Prediction(BaseModel):
     recommendation: Recommendation | None = None
     # 예외 타입 이름만 둔다. 메시지에는 요청 본문이 섞일 수 있다 (절대 규칙 1).
     error: str | None = None
+    # ReviewIncomplete가 달고 온 진단 문장(어느 단계, 대상 값, 작업 구간 등). 요청에서 온 값이 들어 있어
+    # dev 기록에만 쓴다. 채점에는 쓰지 않고, 기록에 남기는 곳(harness.build_record)이 split으로 거른다.
+    error_detail: str | None = None
     # v2에서 이력 검색이 돌려준 상위 history_id. v0, v1은 None.
     retrieved_history: list[str] | None = None
 

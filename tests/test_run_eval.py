@@ -130,8 +130,9 @@ async def test_v1이_판정을_못_만들어도_warm_up은_멈추지_않고_오�
     _queue_v1(items)
     wrong = ChangeRequest(target="payment-service", change_type="deploy")  # CMDB에 없는 대상: 다시 물어도 같다
     set_fake_responses_for("main", ChangeRequest, [wrong] * 8)  # warm-up 1건 + 요청 3건, 건마다 2회 호출
+    lines: list[str] = []
     outcome = await run_evaluation(
-        _cfg(tmp_path, version="v1"), now=lambda: FIXED, out=lambda _: None, mcp_factory=lambda: MCPClient(build_server())
+        _cfg(tmp_path, version="v1"), now=lambda: FIXED, out=lines.append, mcp_factory=lambda: MCPClient(build_server())
     )
     metrics = outcome.summary["metrics"]
     assert outcome.summary["meta"]["warmup_error"] == "ReviewIncomplete"
@@ -139,6 +140,9 @@ async def test_v1이_판정을_못_만들어도_warm_up은_멈추지_않고_오�
     assert metrics["self_contradiction_n"] == 0  # 오류 난 실행은 자기모순을 따질 수 없다
     records = [json.loads(line) for line in outcome.jsonl_path.read_text(encoding="utf-8").splitlines()]
     assert {r["error"] for r in records} == {"ReviewIncomplete"} and {r["verdict_pred"] for r in records} == {"ERROR"}
+    # dev는 판정을 못 만든 이유를 남긴다 (N1)
+    assert {r["detail"]["error_detail"] for r in records} == {"parse_request: target='payment-service'이(가) CMDB에 없다"}
+    assert any("error=ReviewIncomplete (parse_request: target='payment-service'" in line for line in lines)
 
 
 async def test_v1_실행이_중간에_실패해도_MCP_서버는_닫힌다(tmp_path):
@@ -417,6 +421,35 @@ async def test_eval_실행은_본문과_상세를_내지_않고_실제_정답_�
     summary_text = json.dumps(outcome.summary, ensure_ascii=False)
     assert "REQ-E" not in summary_text  # summary에 요청별 목록이 없다
     assert outcome.summary["metrics"]["n_requests"] == 10
+
+
+async def test_eval_실행은_판정을_못_만든_이유도_내지_않고_예외_타입만_남긴다(tmp_path, monkeypatch):
+    """N1의 진단 정보에는 대상 값과 작업 구간이 들어 있어 dev에서만 남긴다 (절대 규칙 1)."""
+    source = get_settings().data_dir
+    stand_in = data_dir_with_stand_in_eval(source, tmp_path / "data")
+    monkeypatch.setenv("GK_DATA_DIR", str(stand_in))
+    data_loader.clear_caches()
+    items = load_requests("eval", allow_eval=True)
+    _queue_v1(items)
+    wrong = ChangeRequest(target="payment-service", change_type="deploy")  # 다시 물어도 같다
+    set_fake_responses_for("main", ChangeRequest, [wrong] * (2 * (len(items) + 1)))  # warm-up 1건 + 요청 10건
+    opened = watch_reads(monkeypatch)
+    lines: list[str] = []
+    outcome = await run_evaluation(
+        _cfg(tmp_path / "out", version="v1", split="eval", limit=None),
+        now=lambda: FIXED,
+        out=lines.append,
+        mcp_factory=lambda: MCPClient(build_server()),
+    )
+
+    assert real_eval_files_read(opened, source) == []
+    jsonl = outcome.jsonl_path.read_text(encoding="utf-8")
+    records = [json.loads(line) for line in jsonl.splitlines()]
+    assert {r["error"] for r in records} == {"ReviewIncomplete"}  # 타입 이름만
+    printed = "\n".join(lines) + "\n" + format_summary(outcome.summary) + jsonl
+    for leaked in ("payment-service", "CMDB에 없다", "parse_request", "error_detail"):
+        assert leaked not in printed, leaked
+    assert all("detail" not in r for r in records)
 
 
 # ---------------------------------------------------------------------------

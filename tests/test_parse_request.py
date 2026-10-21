@@ -1,4 +1,6 @@
-"""① parse_request 노드 테스트 (fake LLM). 필수 항목 재시도(리뷰 H1)와 anthropic 와이어를 확인한다."""
+"""① parse_request 노드 테스트 (fake LLM). 필수 항목 재시도(리뷰 H1), 작업 구간 점검(N1)과 anthropic 와이어를 확인한다."""
+
+from datetime import timedelta
 
 import pytest
 
@@ -159,6 +161,8 @@ async def test_다시_물어도_대상이_없으면_ReviewIncomplete다_판정�
     with pytest.raises(ReviewIncomplete) as error:
         await run(state_of("REQ-D06"), [wrong, wrong])
     assert "payment-service" not in str(error.value)  # 메시지에 요청에서 온 값을 싣지 않는다
+    # 값은 진단용 detail에만 있다. 평가 하네스가 dev 기록에만 남긴다 (N1)
+    assert error.value.stage == "parse_request" and error.value.detail == "target='payment-service'이(가) CMDB에 없다"
 
 
 async def test_재시도가_첫_결과의_대상을_망가뜨리면_첫_결과를_쓴다():
@@ -173,6 +177,57 @@ async def test_재시도_응답이_검증에_실패해도_유효한_첫_결과�
     result, collector = await run(state_of("REQ-D06"), [first, {"change_type": "deploy"}])  # target 없음
     assert result["structured"] == first
     assert result["metrics"]["required_field_retries"] == 1 and collector.snapshot().llm_calls == 2
+
+
+# ---------------------------------------------------------------------------
+# 작업 구간 (N1)
+# 종료가 시작보다 늦지 않으면 규칙 엔진과 get_calendar가 INVALID_ARGUMENT로 거절해 판정을 만들 수 없다.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("shift", [timedelta(0), timedelta(hours=11)], ids=["종료가_시작과_같다", "종료가_시작보다_앞선다"])
+async def test_종료가_시작보다_늦지_않으면_코드가_계산한_기본값을_알려_주고_1회_다시_묻는다(shift, recorder):
+    fixed = label_of("REQ-D01")
+    broken = label_of("REQ-D01", end=fixed.start - shift)
+    result, collector = await run(state_of("REQ-D01"), [broken, fixed])
+
+    assert result["structured"] == fixed
+    assert result["metrics"] == {"parse_retries": 0, "required_field_retries": 1}
+    assert collector.snapshot().llm_calls == 2
+    feedback = recorder[0].calls[1][2].content
+    assert "종료 시각(end)은 시작 시각(start)보다 늦어야 한다" in feedback
+    assert "60분 뒤인 2026-10-30T21:00:00+09:00" in feedback  # 시각 덧셈은 모델이 아니라 코드가 한다
+
+
+def test_기본_작업_시간은_rules_json에서_읽고_종료가_없는_것은_문제가_아니다():
+    cmdb, rules = load_cmdb(), load_rules()
+    broken = label_of("REQ-D01", end=label_of("REQ-D01").start)
+    assert len(find_problems(broken, cmdb, rules)) == 1
+    short = rules.model_copy(update={"defaults": rules.defaults.model_copy(update={"work_duration_minutes_if_missing": 30})})
+    assert "30분 뒤인 2026-10-30T20:30:00+09:00" in find_problems(broken, cmdb, short)[0]
+    # 종료가 null이면 엔진이 기본 작업 시간을 붙이므로 다시 물을 이유가 없다
+    assert find_problems(label_of("REQ-D01", end=None), cmdb, rules) == []
+
+
+async def test_다시_물어도_구간이_틀리면_ReviewIncomplete다_값을_고쳐_쓰지_않는다():
+    start = label_of("REQ-D01").start
+    broken = label_of("REQ-D01", end=start)
+    set_fake_responses("main", [broken, broken])
+    collector = UsageCollector()
+    with pytest.raises(ReviewIncomplete) as error:
+        await node.parse_request(state_of("REQ-D01"), {"callbacks": [collector]})
+
+    assert collector.snapshot().llm_calls == 2  # 세 번째 호출은 없다
+    assert error.value.stage == "parse_request"
+    assert error.value.detail == f"start={start.isoformat()}, end={start.isoformat()}"
+    assert "2026" not in str(error.value)  # 메시지에 요청에서 온 값을 싣지 않는다
+
+
+async def test_재시도가_작업_구간을_망가뜨리면_첫_결과를_쓴다():
+    first = label_of("REQ-D06", start=None, end=None)
+    worse = label_of("REQ-D06", end=label_of("REQ-D06").start)
+    result, _ = await run(state_of("REQ-D06"), [first, worse])
+    assert result["structured"] == first
 
 
 # ---------------------------------------------------------------------------
