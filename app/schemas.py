@@ -325,6 +325,8 @@ class StandardChangeSpec(_DataModel):
     std_id: StandardId
     title: str
     condition: str
+    # 조건 문장의 값을 코드가 읽는 자리 (예: STD-02 max_days_before_expiry). 없으면 빈 dict.
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class RiskConfig(_DataModel):
