@@ -6,11 +6,17 @@ from datetime import datetime
 import pytest
 
 from app import data_loader
+from app.agent.mcp_client import MCPClient
+from app.agent.nodes.classify import RouteGuess
+from app.agent.nodes.decide import DecideDraft
+from app.agent.nodes.impact_agent import ImpactNote
+from app.agent.nodes.policy_agent import PolicyNotes
 from app.config import get_settings
 from app.data_loader import load_requests
-from app.llm.fake import set_fake_responses
+from app.llm.fake import set_fake_responses, set_fake_responses_for
 from app.llm.usage import ModelUsage, UsageSummary
-from app.schemas import KST
+from app.mcp_server.server import build_server
+from app.schemas import KST, ChangeRequest
 from eval.harness import (
     RunConfig,
     RunConfigError,
@@ -65,9 +71,90 @@ def _queue(items, *, reps=1, judge=True):
     set_fake_responses("judge", judge_responses)
 
 
+def _queue_v1(items, *, reps=1):
+    """v1 실행에 줄 fake 응답. 구조화는 라벨 그대로, 설명과 대안은 일반적인 응답이다.
+
+    PolicyNotes 등은 요청마다 달라야 할 이유가 없다(조항 ID가 안 맞으면 엔진 결과에 없는 note로 버려질 뿐이라
+    판정과 위반은 그대로다). 모두 넉넉히 넣고 쓰이는 만큼만 꺼낸다.
+    """
+    runs = [items[0]] + [item for _ in range(reps) for item in items]  # warm-up 1건 + 요청 x rep
+    structured = [
+        ChangeRequest.model_validate(i.expected.structured.model_dump(exclude={"acceptable_change_types", "time_note"}))
+        for i in runs
+    ]
+    set_fake_responses_for("main", ChangeRequest, structured)
+    set_fake_responses_for(
+        "small", RouteGuess,
+        [RouteGuess(change_type=r.change_type, is_emergency=r.is_emergency) for r in structured],
+    )  # fmt: skip
+    set_fake_responses_for("main", PolicyNotes, [PolicyNotes(items=[], summary="정책 요약")] * len(runs))
+    set_fake_responses_for("main", ImpactNote, [ImpactNote(summary="영향도 요약")] * len(runs))
+    draft = DecideDraft(explanation="설명", conditions=["조건을 충족한다"], alternative_start=None, alternative_end=None)
+    set_fake_responses_for("main", DecideDraft, [draft] * (2 * len(runs)))
+    judged = sum(1 for item in items if item.expected.verdict in ("반려", "조건부 승인")) * reps
+    set_fake_responses("judge", [{"score": 4, "reason": "근거"}] * judged)
+
+
 def _cfg(tmp_path, **kwargs) -> RunConfig:
     defaults = {"version": "v0", "split": "dev", "provider": "fake", "limit": 3, "results_dir": tmp_path}
     return RunConfig(**{**defaults, **kwargs})
+
+
+async def test_v1_실행은_MCP_서버를_한_번_띄워_재사용하고_끝나면_닫는다(tmp_path):
+    items = load_requests("dev")[:3]  # D01 반려, D02 승인, D03 조건부
+    _queue_v1(items, reps=2)
+    clients: list[MCPClient] = []
+
+    def factory() -> MCPClient:
+        clients.append(MCPClient(build_server()))
+        return clients[-1]
+
+    lines: list[str] = []
+    outcome = await run_evaluation(_cfg(tmp_path, version="v1", reps=2), now=lambda: FIXED, out=lines.append, mcp_factory=factory)
+
+    assert len(clients) == 1 and not clients[0].is_connected  # 한 번 만들어 모든 요청이 쓰고, 끝나면 닫는다
+    summary, metrics = outcome.summary, outcome.summary["metrics"]
+    assert summary["meta"]["version"] == "v1" and metrics["n_runs"] == 6 and metrics["n_errors"] == 0
+    assert metrics["verdict_accuracy"] == 1.0 and metrics["consistency"] == 1.0
+    assert metrics["self_contradiction_n"] == 6 and metrics["self_contradiction_count"] == 0
+    assert set(summary["meta"]["prompt_sha256"]) >= {"parse_request.md", "classify.md", "policy_agent.md", "impact_agent.md", "decide.md"}
+    assert summary["usage"]["llm_calls_per_run"] >= 4  # parse, classify, decide에 정책 설명과 영향도 요약이 더해진다
+    assert "alternative_fallbacks" in summary["counters"] and "parse_retries" in summary["counters"]
+    records = [json.loads(line) for line in outcome.jsonl_path.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 6 and all(r["self_contradiction"] is False for r in records)
+
+
+async def test_v1_실행이_중간에_실패해도_MCP_서버는_닫힌다(tmp_path):
+    clients: list[MCPClient] = []
+
+    def factory() -> MCPClient:
+        clients.append(MCPClient(build_server()))
+        return clients[-1]
+
+    # 응답을 하나도 넣지 않아 warm-up이 설정 오류로 멈춘다
+    with pytest.raises(RunConfigError, match="warm-up"):
+        await run_evaluation(_cfg(tmp_path, version="v1"), now=lambda: FIXED, out=lambda _: None, mcp_factory=factory)
+    assert not clients[0].is_connected
+
+
+async def test_v1이_아닌_버전은_MCP_서버를_띄우지_않는다(tmp_path):
+    items = load_requests("dev")[:3]
+    _queue(items)
+    called: list[int] = []
+    await run_evaluation(_cfg(tmp_path), now=lambda: FIXED, out=lambda _: None, mcp_factory=lambda: called.append(1))  # type: ignore[arg-type,return-value]
+    assert called == []
+
+
+async def test_지원하지_않는_버전은_서버를_띄우기_전에_거절된다(tmp_path):
+    started: list[int] = []
+
+    class Probe(MCPClient):
+        async def start(self) -> None:
+            started.append(1)
+
+    with pytest.raises(NotImplementedError):
+        await run_evaluation(_cfg(tmp_path, version="v2"), now=lambda: FIXED, out=lambda _: None, mcp_factory=Probe)
+    assert started == []
 
 
 async def test_dev_실행이_jsonl과_summary를_만든다(tmp_path):

@@ -203,6 +203,7 @@ def meta_table(chosen: dict[str, dict]) -> str:
         ("Judge 모델 (독립 여부)", lambda s: f"{s['meta']['judge']['model']} ({'독립' if s['meta']['judge']['independent'] else '비독립'})" if s["meta"]["judge"]["enabled"] else "사용 안 함"),
         ("요청 x 반복", lambda s: f"{s['meta']['n_requests']} x {s['meta']['reps']}"),
         ("프롬프트 해시", prompts),
+        ("OLLAMA_NUM_PARALLEL", lambda s: s["meta"].get("ollama_num_parallel") or "-"),
         ("LangSmith 추적", lambda s: s["meta"]["langsmith"]["project"] or "끔"),
         ("warm-up", lambda s: s["meta"]["warmup"]),
     ]
@@ -251,6 +252,11 @@ def notes(chosen: dict[str, dict]) -> list[str]:
     lines.append("v0, v1은 과거 이력을 받지 않아 위험도를 CMDB 등급으로만 정한다. 이력 기반 상향과 RAG 재현율은 v2의 RAG가 더하는 정보다.")
     if any(not s["meta"]["judge"]["independent"] and s["meta"]["judge"]["enabled"] for s in chosen.values()):
         lines.append("Judge 모델이 시스템 모델과 같은 실행은 대안 품질이 비독립 평가다. 단계별 추세를 보는 용도이고, 최종 평가(anthropic, opus)와 직접 비교하지 않는다.")
+    if any(s["meta"]["provider"] == "ollama" for v, s in chosen.items() if v != "v0"):
+        lines.append(
+            "Ollama 서버가 요청을 한 건씩 처리하면(OLLAMA_NUM_PARALLEL=1) v1의 policy_agent와 impact_agent가 보내는 LLM 호출이 "
+            "서버에서 줄을 서서 병렬의 지연 이득이 이 수치에 보이지 않는다. 최종 평가(anthropic)는 실제로 병렬이다."
+        )
     if any(s["usage"]["reasoning_tokens_total"] for s in chosen.values()):
         lines.append("출력 토큰에는 모델의 reasoning(thinking) 토큰이 포함된다. 지연과 비용에도 같이 반영된다.")
     if any(s["flags"]["possible_truncation_runs"] for s in chosen.values()):

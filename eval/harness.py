@@ -27,6 +27,7 @@ from typing import Any
 
 from app import data_loader
 from app.agent.graph import build_graph
+from app.agent.mcp_client import MCPClient
 from app.agent.prompting import file_sha256, prompt_hashes
 from app.config import PROJECT_ROOT, GKVersion, Provider, Settings, get_settings
 from app.llm.usage import UsageCollector, UsageSummary
@@ -321,7 +322,13 @@ async def run_evaluation(
     *,
     now: Callable[[], datetime] = lambda: datetime.now(KST),
     out: Callable[[str], None] = print,
+    mcp_factory: Callable[[], MCPClient] = MCPClient,
 ) -> EvalOutcome:
+    """v0은 그래프만 만든다. v1 이후는 MCP 서버를 한 번 띄워 모든 요청이 재사용하고 끝나면 닫는다.
+
+    서버 기동 시간은 요청 지연에 들어가지 않는다. 서비스에서는 lifespan이 한 번 만들어 두는 것과 같은 조건이다.
+    테스트는 mcp_factory로 메모리 내 서버를 넘긴다.
+    """
     settings = apply_run_env(cfg.version, cfg.provider)
     check_provider_models(settings)
     if cfg.langsmith and not api_key_present():
@@ -331,7 +338,24 @@ async def run_evaluation(
     if cfg.reps < 1:
         raise RunConfigError("--reps는 1 이상이어야 한다.")
 
-    graph = build_graph(cfg.version)
+    mcp = mcp_factory() if cfg.version != "v0" else None
+    # 클라이언트는 아직 시작하지 않았다. 지원하지 않는 버전은 서버 프로세스를 띄우기 전에 여기서 걸린다.
+    graph = build_graph(cfg.version, mcp=mcp)
+    if mcp is not None:
+        try:
+            await mcp.start()
+        except Exception as exc:
+            raise RunConfigError(f"MCP 서버를 시작하지 못했다 ({type(exc).__name__}).") from None
+    try:
+        return await _run_with_graph(cfg, graph, settings, now, out)
+    finally:
+        if mcp is not None:
+            await mcp.stop()
+
+
+async def _run_with_graph(
+    cfg: RunConfig, graph, settings: Settings, now: Callable[[], datetime], out: Callable[[str], None]
+) -> EvalOutcome:
     items = load_split(cfg.split)  # type: ignore[arg-type]
     if cfg.limit is not None:
         items = items[: cfg.limit]
@@ -428,6 +452,8 @@ async def run_evaluation(
             "data_sha256": data_hashes(cfg.split, settings),
             "packages": package_versions(),
             "ollama_num_ctx": settings.ollama_num_ctx if cfg.provider == "ollama" else None,
+            # 서버 쪽 값은 알 수 없고, 이 실행의 환경 변수에 있으면 남긴다. 1이면 병렬 LLM 호출이 줄을 선다.
+            "ollama_num_parallel": os.environ.get("OLLAMA_NUM_PARALLEL") if cfg.provider == "ollama" else None,
             "timeout_s": cfg.timeout,
             "warmup": "first_request",
             "warmup_error": warmup_error,

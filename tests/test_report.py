@@ -152,6 +152,20 @@ def test_자기모순_지표가_없던_시절의_summary는_대시로_나오고_
     assert build_report(tmp_path, tmp_path / "report.md", tmp_path / "charts", ["dev"], None, now=NOW) == ["dev"]
 
 
+def test_ollama에서_v1을_재면_병렬이_줄을_설_수_있다는_주석과_NUM_PARALLEL_행이_나온다(tmp_path):
+    v0, v1 = make_summary("v0"), make_summary("v1")
+    v1["meta"]["ollama_num_parallel"] = "1"
+    write_summaries(tmp_path, [v0, v1])
+    build_report(tmp_path, tmp_path / "report.md", tmp_path / "charts", ["dev"], None, now=NOW)
+    text = (tmp_path / "report.md").read_text(encoding="utf-8")
+    assert "| OLLAMA_NUM_PARALLEL | - | 1 | - |" in text and "서버에서 줄을 서서 병렬의 지연 이득이" in text
+
+    only_v0 = tmp_path / "v0_only"
+    write_summaries(only_v0, [v0])
+    build_report(only_v0, only_v0 / "report.md", only_v0 / "charts", ["dev"], None, now=NOW)
+    assert "줄을 서서" not in (only_v0 / "report.md").read_text(encoding="utf-8")  # v0은 병렬 호출이 없다
+
+
 def test_rescored_실행은_리포트_참고에_밝힌다(tmp_path):
     rescored = make_summary("v0")
     rescored["meta"]["rescored"] = {"at": "2026-10-21T18:00:00+09:00", "metrics": ["self_contradiction"], "source": "jsonl"}
