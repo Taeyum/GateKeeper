@@ -65,5 +65,30 @@ def test_상대_경로는_저장소_루트_기준으로_푼다(make_settings, tm
     assert make_settings(gk_data_dir=tmp_path).data_dir == tmp_path
 
 
+def test_API_설정의_기본값(make_settings):
+    s = make_settings()
+    assert s.audit_log == PROJECT_ROOT / ".data/audit.jsonl"
+    assert s.web_origins == ["http://127.0.0.1:5173", "http://localhost:5173"]  # 화면 개발 서버 주소만
+    assert s.gk_run_timeout_s == 300.0
+
+
+def test_화면_주소는_쉼표로_여럿을_받고_공백과_빈_항목을_버린다(monkeypatch, make_settings):
+    monkeypatch.setenv("GK_WEB_ORIGINS", " http://a.example ,, http://b.example:8080 ")
+    assert make_settings().web_origins == ["http://a.example", "http://b.example:8080"]
+
+
+def test_감사_로그_경로는_환경_변수로_바꾸고_상대_경로는_저장소_루트_기준이다(monkeypatch, make_settings, tmp_path):
+    assert make_settings(gk_audit_log=tmp_path / "a.jsonl").audit_log == tmp_path / "a.jsonl"
+    monkeypatch.setenv("GK_AUDIT_LOG", "logs/audit.jsonl")
+    assert make_settings().audit_log == PROJECT_ROOT / "logs/audit.jsonl"
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_실행_제한_시간은_양수여야_한다(monkeypatch, make_settings, value):
+    monkeypatch.setenv("GK_RUN_TIMEOUT_S", value)
+    with pytest.raises(ValidationError):
+        make_settings()
+
+
 def test_get_settings는_캐시된다():
     assert get_settings() is get_settings()
