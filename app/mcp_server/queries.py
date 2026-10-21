@@ -10,7 +10,7 @@ MCP와 무관한 순수 함수다. 서버(server.py)는 이 함수를 감싸기�
 from datetime import datetime
 
 from app.mcp_server.models import CalendarResult, ServiceInfo
-from app.schemas import GKData, Incident
+from app.schemas import GKData, Incident, Service
 
 
 class NotFound(LookupError):
@@ -25,11 +25,21 @@ def overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datet
     return a_start < b_end and b_start < a_end
 
 
-def service_info(data: GKData, service_id: str) -> ServiceInfo:
+def require_service(data: GKData, service_id: str) -> Service:
+    """CMDB에서 서비스를 찾는다. 없으면 NotFound.
+
+    규칙 엔진 Tool도 엔진을 부르기 전에 이 확인을 먼저 한다. 엔진은 CMDB에 없는 대상에 ValueError를
+    내는데, 그 오류를 메시지 문자열로 가려내지 않고 대상 존재를 미리 확인해서 NOT_FOUND로 구분하려는 것.
+    """
     service = data.cmdb.get_service(service_id)
     if service is None:
         known = ", ".join(s.id for s in data.cmdb.services)
         raise NotFound(f"서비스를 찾을 수 없다: {service_id}. 등록된 서비스: {known}")
+    return service
+
+
+def service_info(data: GKData, service_id: str) -> ServiceInfo:
+    service = require_service(data, service_id)
     return ServiceInfo(
         id=service.id,
         name=service.name,
@@ -48,8 +58,7 @@ def calendar_overlap(data: GKData, target: str, start: datetime, end: datetime) 
     if end <= start:
         raise ValueError("end는 start보다 늦어야 한다")
     # 없는 대상은 "겹치는 것 없음"이 아니라 오류로 응답한다. 오타가 충돌 없음으로 보이면 안전하지 않다.
-    if data.cmdb.get_service(target) is None:
-        raise NotFound(f"서비스를 찾을 수 없다: {target}")
+    require_service(data, target)
     freezes = [
         f
         for f in data.calendar.freeze_periods

@@ -42,6 +42,19 @@ def _lookup(fn: Callable[..., Any], *args: Any) -> Any:
         raise ToolError(f"INVALID_ARGUMENT: {exc}") from exc
 
 
+def _call_engine(fn: Callable[..., Any], *args: Any) -> Any:
+    """규칙 엔진 함수를 부르고, 엔진의 ValueError(작업 구간 오류 등)를 INVALID_ARGUMENT로 바꾼다.
+
+    대상이 CMDB에 없는 경우는 이 함수보다 먼저 NOT_FOUND로 걸러 둔다(queries.require_service).
+    그래서 여기서 잡는 ValueError는 대상 오타가 아니라 입력 값 문제이고, 엔진 오류 메시지를
+    문자열로 구분할 필요가 없다. ValueError가 아닌 예상 못 한 오류는 그대로 올려서 mask_error_details가 가린다.
+    """
+    try:
+        return fn(*args)
+    except ValueError as exc:
+        raise ToolError(f"INVALID_ARGUMENT: {exc}") from exc
+
+
 def _register_resources(mcp: FastMCP, policy: PolicyDocs) -> None:
     def add(uri: str, name: str, description: str, text: str) -> None:
         @mcp.resource(uri, name=name, description=description, mime_type="text/markdown")
@@ -67,7 +80,8 @@ def _register_tools(mcp: FastMCP, data: GKData | None) -> None:
         표준 변경 해당 여부를 돌려준다. 위반 여부의 유일한 근거는 이 결과다.
         submitted_at은 요청이 접수된 시각이다 (24시간 전 요청 같은 조항의 기준).
         """
-        return rules_engine.check_all(request, submitted_at, data)
+        _lookup(queries.require_service, gk(), request.target)  # 없는 대상은 NOT_FOUND
+        return _call_engine(rules_engine.check_all, request, submitted_at, data)
 
     @mcp.tool(annotations=_READ_ONLY)
     def check_window(
@@ -80,7 +94,8 @@ def _register_tools(mcp: FastMCP, data: GKData | None) -> None:
         """주어진 작업 시간대가 규정에 걸리는지 확인한다. 조건부 대안 일정을 검증할 때 쓴다."""
         if end <= start:
             raise ToolError("INVALID_ARGUMENT: end는 start보다 늦어야 한다")
-        violations = rules_engine.check_window(target, change_type, start, end, submitted_at, data)
+        _lookup(queries.require_service, gk(), target)  # 없는 대상은 NOT_FOUND
+        violations = _call_engine(rules_engine.check_window, target, change_type, start, end, submitted_at, data)
         return WindowCheckResult(violations=violations)
 
     @mcp.tool(annotations=_READ_ONLY)

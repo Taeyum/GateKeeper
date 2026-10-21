@@ -120,6 +120,38 @@ async def test_엔진_배선_check_policy와_check_window(mcp, monkeypatch):
     assert await mcp.check_window("payments-db", "firewall", request.start, request.end, submitted_at) == [violation]
 
 
+async def test_엔진_Tool도_없는_대상은_MCPNotFoundError이고_재시도하지_않는다(mcp, monkeypatch):
+    request, submitted_at, _ = dev_case("REQ-D01")
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("엔진 호출 전에 NOT_FOUND여야 한다")
+
+    monkeypatch.setattr(rules_engine, "check_all", must_not_run)
+    monkeypatch.setattr(rules_engine, "check_window", must_not_run)
+    metrics: dict[str, int] = {}
+    with pytest.raises(MCPNotFoundError, match="nope-db"):
+        await mcp.check_policy(request.model_copy(update={"target": "nope-db"}), submitted_at, metrics=metrics)
+    with pytest.raises(MCPNotFoundError, match="nope-db"):
+        await mcp.check_window("nope-db", "firewall", request.start, request.end, submitted_at, metrics=metrics)
+    assert metrics == {}
+
+
+async def test_엔진의_ValueError는_MCPToolError_INVALID_ARGUMENT이고_재시도하지_않는다(mcp, monkeypatch):
+    request, submitted_at, _ = dev_case("REQ-D01")
+    calls = []
+
+    def bad_window(*args, **kwargs):
+        calls.append(1)
+        raise ValueError("작업 종료 시각이 시작 시각보다 늦어야 한다")
+
+    monkeypatch.setattr(rules_engine, "check_all", bad_window)
+    metrics: dict[str, int] = {}
+    with pytest.raises(MCPToolError, match="INVALID_ARGUMENT") as excinfo:
+        await mcp.check_policy(request, submitted_at, metrics=metrics)
+    assert not isinstance(excinfo.value, MCPNotFoundError)  # 대상 없음과 구분된다
+    assert len(calls) == 1 and metrics == {}
+
+
 async def test_시작_전에_부르면_안내한다():
     with pytest.raises(MCPClientError, match="start"):
         await MCPClient(build_server()).get_incident("INC-2026-0412")

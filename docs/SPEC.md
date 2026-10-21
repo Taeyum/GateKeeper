@@ -90,7 +90,7 @@
 
 - 결정론 로직은 `rules_engine` 패키지의 순수 함수이고, MCP Tool은 그 함수를 감싸기만 한다. 단위 테스트는 패키지 함수에 건다.
 - Resource는 템플릿이 아니라 12개를 개별 URI로 등록한다(`list_resources`에 나오도록). 규정 원문은 `change_policy.md`를 읽어 파싱한 결과다. `check_window`는 `{violations: [...]}`로 응답한다.
-- 없는 서비스/티켓/대상 조회는 빈 결과가 아니라 `ToolError("NOT_FOUND: ...")`, 인자 오류는 `INVALID_ARGUMENT`다. 클라이언트(`app/agent/mcp_client.py`)는 NOT_FOUND를 `MCPNotFoundError`로 구분하고 재시도하지 않는다. 시간 초과와 연결 오류만 지수 백오프로 최대 2회 재시도한다.
+- 없는 서비스/티켓/대상 조회는 빈 결과가 아니라 `ToolError("NOT_FOUND: ...")`, 인자 오류는 `INVALID_ARGUMENT`다. `check_policy`/`check_window`도 같다. 엔진을 부르기 전에 target을 CMDB에서 찾아 없으면 `NOT_FOUND`, 그 뒤 엔진의 `ValueError`(작업 구간 오류 등)는 `INVALID_ARGUMENT`로 바꾼다. 클라이언트(`app/agent/mcp_client.py`)는 NOT_FOUND를 `MCPNotFoundError`로 구분하고 재시도하지 않는다. 시간 초과와 연결 오류만 지수 백오프로 최대 2회 재시도한다.
 - `search_history`는 서비스/유형 메타데이터로 미리 거르지 않는다. 의미 검색 결과를 그대로 상위 3건 돌려줘야 RAG 재현율이 의미 있다.
 - 임베딩은 Ollama `bge-m3`(없으면 `nomic-embed-text`)로 로컬 고정, Vector DB는 로컬 영속형(Chroma 등) 하나. 색인은 `scripts/build_index.py`로 한 번 만든다.
 

@@ -219,6 +219,76 @@ async def test_엔진의_내부_오류_상세는_응답에_싣지_않는다(clie
     assert "/secret/path" not in str(excinfo.value) and "비밀값" not in str(excinfo.value)
 
 
+# ---------------------------------------------------------------- 규칙 엔진 Tool의 오류 구분 (NOT_FOUND / INVALID_ARGUMENT)
+# 엔진은 CMDB에 없는 대상과 end <= start에 ValueError를 낸다. 서버는 대상 존재를 엔진 호출 전에 확인해서
+# NOT_FOUND로 구분하고, 그 뒤의 ValueError를 INVALID_ARGUMENT로 바꾼다. 메시지 문자열 매칭에 기대지 않는다.
+
+
+def _engine_must_not_run(*args, **kwargs):
+    raise AssertionError("대상이 없으면 엔진을 부르기 전에 NOT_FOUND여야 한다")
+
+
+async def test_check_policy는_없는_대상을_엔진_호출_전에_NOT_FOUND로_구분한다(client, monkeypatch):
+    request, submitted_at, _ = dev_case("REQ-D01")
+    monkeypatch.setattr(rules_engine, "check_all", _engine_must_not_run)
+    with pytest.raises(ToolError, match="NOT_FOUND.*nope-db"):
+        await client.call_tool("check_policy", _payload(request.model_copy(update={"target": "nope-db"}), submitted_at))
+
+
+async def test_check_window는_없는_대상을_엔진_호출_전에_NOT_FOUND로_구분한다(client, monkeypatch):
+    monkeypatch.setattr(rules_engine, "check_window", _engine_must_not_run)
+    with pytest.raises(ToolError, match="NOT_FOUND.*nope-db"):
+        await client.call_tool(
+            "check_window",
+            {
+                "target": "nope-db",
+                "change_type": "firewall",
+                "start": "2026-11-03T14:00:00+09:00",
+                "end": "2026-11-03T15:00:00+09:00",
+                "submitted_at": "2026-10-26T10:00:00+09:00",
+            },
+        )
+
+
+async def test_엔진의_ValueError는_INVALID_ARGUMENT로_바뀐다(client, monkeypatch):
+    request, submitted_at, _ = dev_case("REQ-D01")
+
+    def bad_window(*args, **kwargs):
+        raise ValueError("작업 종료 시각이 시작 시각보다 늦어야 한다")
+
+    monkeypatch.setattr(rules_engine, "check_all", bad_window)
+    monkeypatch.setattr(rules_engine, "check_window", bad_window)
+    with pytest.raises(ToolError, match="INVALID_ARGUMENT.*늦어야 한다"):
+        await client.call_tool("check_policy", _payload(request, submitted_at))
+    with pytest.raises(ToolError, match="INVALID_ARGUMENT.*늦어야 한다"):
+        await client.call_tool(
+            "check_window",
+            {
+                "target": "payments-db",
+                "change_type": "firewall",
+                "start": "2026-11-03T14:00:00+09:00",
+                "end": "2026-11-03T15:00:00+09:00",
+                "submitted_at": "2026-10-26T10:00:00+09:00",
+            },
+        )
+
+
+@requires_engine
+async def test_end가_start보다_이른_요청은_INVALID_ARGUMENT다(client):
+    """실제 엔진이 낸 ValueError가 내부 오류로 가려지지 않는지 확인한다."""
+    request, submitted_at, _ = dev_case("REQ-D01")
+    reversed_window = request.model_copy(update={"end": request.start - (request.end - request.start)})
+    with pytest.raises(ToolError, match="INVALID_ARGUMENT"):
+        await client.call_tool("check_policy", _payload(reversed_window, submitted_at))
+
+
+@requires_engine
+async def test_실제_엔진에서도_없는_대상은_NOT_FOUND다(client):
+    request, submitted_at, _ = dev_case("REQ-D01")
+    with pytest.raises(ToolError, match="NOT_FOUND"):
+        await client.call_tool("check_policy", _payload(request.model_copy(update={"target": "nope-db"}), submitted_at))
+
+
 # ---------------------------------------------------------------- dev 라벨과 데이터의 일치 (엔진 불필요)
 
 
