@@ -137,3 +137,32 @@
 
 ### 발표용 메모 (v0의 실패 유형, dev)
 - 없는 예정 변경 충돌(CHG-06) 주장 7건, 금요일 16~17시를 금지 시간대로 본 CHG-01 오탐 5건, "다음 주 화요일" 상대 날짜 오류, 판정과 위반 목록 모순 5건, 표준 변경의 동결(CHG-10) 누락 1건.
+
+## 5단계 계획 (docs/plans/jaunty-hugging-pike.md → stage5.md) 리뷰
+
+결과: K1~K3 반영 후 승인 가능. 엔진 호출 경계(판정 경로는 엔진 직접, 서브에이전트는 MCP), citations 규칙으로 J1 모순이 구조적으로 0이 되는 것, H1을 엔진 수정 없이 재시도와 경고로 푼 것, 선택 필드 0개 스키마, ReviewIncomplete로 판정을 지어내지 않는 것이 좋다. J1 재계산 6/10이 맞다(리뷰가 REQ-D09의 CHG-02/03을 빠뜨렸다). 정의대로 6건을 기록한다.
+
+### K1. ③ 서브에이전트를 컴파일된 서브그래프로 만든다 (필수)
+- 기획서와 구조도는 ③을 "병렬로 도는 컴파일된 서브그래프 3개"로 적었고, 평가표의 Multi-Agent 항목 근거도 여기다. 계획은 노드 함수 하나씩이라 기획서와 다르고, 발표에서 "에이전트"라고 부를 근거가 약하다.
+- 반영: policy_agent, impact_agent를 각자 자기 상태 스키마(입력: structured, route, submitted_at / 출력: SubagentResult)를 가진 `StateGraph`로 만들어 compile하고, 부모 그래프에는 상태를 변환하는 래퍼 노드로 붙인다. 내부 노드 예: policy는 `check_policy`(MCP) → (위반/면제가 있으면) `read_rules`(rules:// 읽기) → `write_notes`(LLM), impact는 `lookup`(get_service_info, get_calendar) → `summarize`(LLM). Tool 호출은 지금처럼 코드가 결정론으로 한다(판정 경로에 LLM의 도구 선택을 넣지 않는 것이 설계 주장이다).
+- 확인: LangSmith trace에서 두 서브그래프가 같은 부모 아래 병렬로, 내부 노드가 중첩으로 보이는지. `graph.get_graph(xray=True)`의 Mermaid를 docs/reports/stage5.md에 넣는다(발표 구조도로 쓴다). 6단계 history_agent도 같은 모양으로 붙인다.
+
+### K2. policy_agent는 violations[].evidence를 바꾸지 않는다 (필수)
+- 계획은 LLM이 쓴 근거 문장으로 엔진 evidence를 바꾼다. v1에는 Validator가 없어서 LLM이 값을 틀리게 옮기면(시각, 대역, 기한) 그대로 승인자에게 간다. 그리고 화면 세션과 정한 계약(feat/web, 결정 3)은 엔진 근거 문장을 "자세한 근거"에 그대로 보여 주는 것이다.
+- 반영: `violations[].evidence`는 엔진 문장 그대로 둔다. LLM이 rules:// 원문을 읽고 쓴 조항별 쉬운 설명은 `policy.tool_output`과 별개로 `policy.summary`(또는 `notes: [{rule_id, note}]`)에 두고, decide의 explanation이 이것을 쓴다. 병합 규칙(엔진 ID만, 빠지면 생략)은 notes에 그대로 적용한다. 판정과 지표에는 영향이 없다.
+
+### K3. classify 불일치 시 엔진 확정값은 유지한다 (필수)
+- 계획: 작은 모델과 parse 결과가 표준/긴급 여부에서 다르면 general. 이때 `standard_change_id`를 지우는지가 안 적혀 있다. 지우면 qwen3:0.6b가 틀릴 때마다 표준 변경의 판정이 "자동 승인"에서 "승인"으로 바뀌어, 작은 모델의 오류가 판정 정확도로 새어 든다(판정은 코드가 정한다는 원칙과 어긋난다).
+- 반영: 불일치로 route가 general이 돼도 `standard_change_id`와 `emergency_valid`는 엔진 확정값 그대로 두고 판정은 엔진 기준이다. general은 "검사를 더 돈다(impact_agent 실행)"는 뜻만 갖는다. 대신 warnings에 "분류 불일치: 사람 확인 필요"를 넣고, 7단계 approval_gate는 route가 standard일 때만 자동 승인을 실행한다(불일치면 승인자에게 간다). test_classify에 "엔진은 표준, 작은 모델은 배포 → route general, standard_change_id 유지, 판정 자동 승인, 경고 있음"을 넣는다.
+
+### K4. decide가 대안의 구성 요소를 상태에 따로 남긴다 (권장)
+- 화면 계약(결정 1)의 `alternative_diff`는 7단계 API가 코드로 계산한다. 그때 필요한 값(검증을 통과한 대안 시작/종료, conditions 목록, 대체 여부)을 문장으로 조립하기 전에 상태에 `alternative: {start, end, conditions, fallback}`로 남겨 둔다. Recommendation은 바꾸지 않는다.
+
+### 참고 (반영 불필요)
+- Ollama가 `OLLAMA_NUM_PARALLEL=1`이면 policy/impact의 LLM 호출이 서버에서 줄을 서서 dev 지연에 병렬 이득이 안 보인다. 하네스 메타데이터에 이 값(설정돼 있으면)을 남기고 보고서에 적는다. 최종 평가(anthropic)는 실제로 병렬이다.
+- v1의 필수 항목 재시도(H1)는 v0에 없는 구조적 장치다. 공정성 문제는 아니고 개선 내용이므로 보고서에 "v1이 더한 것"으로 적는다.
+
+## 화면 쪽에서 온 요청 (5단계 decide에 반영)
+
+### K5. explanation은 쉬운 한국어로 (권장)
+- 화면(feat/web)은 `Recommendation.explanation`을 승인자 화면 "시스템 설명"에 그대로 보여 준다. decide 프롬프트가 규정 번호와 영어 약어 없이 "~해요"체 두세 문장으로 쓰게 한다(규정 번호는 화면이 citations로 따로 보여 준다). 평가 지표(Judge는 대안만 본다)에는 영향이 없으니 v1 dev 측정 전에 바꿔도 된다.
