@@ -6,8 +6,11 @@ approval은 쓰는 노드가 생길 때 더한다. errors와 metrics에 reducer�
 """
 
 import operator
-from typing import Annotated, TypedDict
+from typing import Annotated
 
+from typing_extensions import TypedDict
+
+from app.agent.results import SubagentResult
 from app.schemas import ChangeRequest, Recommendation, Route, StandardId
 
 
@@ -33,6 +36,9 @@ class GKState(TypedDict, total=False):
     route: Route
     standard_change_id: StandardId | None
     emergency_valid: bool | None
+    # ③ 서브에이전트 결과. 각자 컴파일된 서브그래프이고 자기 상태를 가진다(nodes/policy_agent.py, impact_agent.py).
+    policy: SubagentResult
+    impact: SubagentResult
     recommendation: Recommendation
     # 승인자에게 보여 줄 경고. 노드마다 더하고 decide가 Recommendation.warnings로 옮긴다.
     warnings: Annotated[list[str], operator.add]
