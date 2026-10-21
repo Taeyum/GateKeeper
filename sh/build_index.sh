@@ -18,7 +18,8 @@ cd "$(dirname "$0")/.."
 [ -x ".venv/Scripts/python.exe" ] && export PATH="$PWD/.venv/Scripts:$PATH"
 
 # 설정은 앱이 직접 읽는다(환경 변수가 .env보다 우선). 키 값은 읽지 않는다.
-read -r PROVIDER EMBED OLLAMA_URL < <(python - <<'PY'
+# Windows의 python은 줄 끝에 \r을 붙여서 마지막 값(URL)이 깨지므로 tr로 지운다.
+read -r PROVIDER EMBED OLLAMA_URL < <(python - <<'PY' | tr -d '\r'
 from app.config import get_settings
 
 s = get_settings()
@@ -28,9 +29,11 @@ PY
 
 if [ "$PROVIDER" != "fake" ]; then
     # 임베딩은 LLM provider와 상관없이 항상 Ollama다.
-    curl -s --max-time 2 "$OLLAMA_URL/api/tags" >/dev/null 2>&1 \
+    # ollama CLI가 PATH에 없는 머신(Windows 등)에서도 되도록 서버 API로 모델을 확인한다.
+    TAGS="$(curl -s --max-time 2 "$OLLAMA_URL/api/tags" 2>/dev/null || true)"
+    [ -n "$TAGS" ] \
         || { echo "ERROR: ollama serve에 연결할 수 없습니다 ($OLLAMA_URL). 서버를 띄운 뒤 다시 실행하세요."; exit 1; }
-    ollama list | awk 'NR>1 {print $1}' | grep -Fx -e "$EMBED" -e "$EMBED:latest" >/dev/null \
+    echo "$TAGS" | grep -Eq "\"name\":\"${EMBED}(:[^\"]*)?\"" \
         || { echo "ERROR: 임베딩 모델 $EMBED 미설치. 'bash sh/setup_ollama.sh' 후 다시 실행하세요."; exit 1; }
 fi
 
