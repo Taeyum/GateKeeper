@@ -1,15 +1,18 @@
-"""① parse_request 노드 테스트 (fake LLM). 필수 항목 재시도(리뷰 H1), 작업 구간 점검(N1)과 anthropic 와이어를 확인한다."""
+"""① parse_request 노드 테스트 (fake LLM). 필수 항목 재시도(리뷰 H1), 작업 구간 점검(N1), 프롬프트 주입(N2, N3),
+anthropic 와이어를 확인한다."""
 
 from datetime import timedelta
 
 import pytest
 
 from app import data_loader
+from app.agent import prompting
 from app.agent.errors import ReviewIncomplete
 from app.agent.nodes import parse_request as node
 from app.agent.nodes.parse_request import build_messages, find_problems
+from app.agent.prompting import load_prompt, render_required_items
 from app.agent.wire import WireChangeRequest, change_request_schema, to_change_request
-from app.data_loader import load_cmdb, load_requests, load_rules
+from app.data_loader import load_cmdb, load_policy_text, load_requests, load_rules
 from app.llm.fake import FakeChatModel, set_fake_responses
 from app.llm.usage import UsageCollector
 from app.schemas import ChangeRequest
@@ -270,6 +273,37 @@ def test_시스템_프롬프트는_서비스_목록과_구조화_규칙을_담�
     assert "{services}" not in system and "{structure_rules}" not in system
     # 규정 판단은 policy_agent 몫이다. 구조화 단계에는 규정, 캘린더, 티켓을 주지 않는다.
     assert "CHG-01" not in system and "FRZ-01" not in system and "INC-2026-0412" not in system
+
+
+def test_시스템_프롬프트에_유형별_필수_항목과_표준_변경_목록이_규정_원문에서_들어간다():  # N2
+    system = build_messages(state_of("REQ-D02"))[0].content
+    assert "- 방화벽: 대상과 포트, 출발지 IP, 허용 기한(출발지가 외부일 때), 사유" in system
+    assert "- 배포: 작업 시간, 롤백 계획, 스테이징 테스트 결과" in system
+    assert "- STD-01 로그 레벨 변경: 재시작 없이 로그 레벨만 바꾸는 경우. 다른 설정을 함께 바꾸거나 재시작이 필요하면 일반 변경(배포)이다" in system
+    assert "근거 조항" not in system  # 구조화 단계는 위반을 판단하지 않는다
+
+
+def test_필수_항목_표는_규정_원문을_바꾸면_따라_바뀐다_코드에_유형이_없다(monkeypatch):
+    text = load_policy_text().replace("대상과 포트, 출발지 IP", "대상과 포트, 출발지 CIDR")
+    monkeypatch.setattr(prompting, "load_policy_text", lambda: text)
+    assert "- 방화벽: 대상과 포트, 출발지 CIDR," in build_messages(state_of("REQ-D02"))[0].content
+
+
+def test_규정_원문에서_표를_못_찾으면_빈_프롬프트를_내지_않고_멈춘다(monkeypatch):
+    monkeypatch.setattr(prompting, "load_policy_text", lambda: "# 규정\n\n## 1. 판정 기준\n\n내용\n")
+    with pytest.raises(ValueError, match="변경 유형별 필수 항목"):
+        render_required_items()
+    monkeypatch.setattr(prompting, "load_policy_text", lambda: "# 규정\n\n## 4. 변경 유형별 필수 항목\n\n표가 없다\n")
+    with pytest.raises(ValueError, match="표를 읽지 못했다"):
+        render_required_items()
+
+
+def test_허용_기한과_종료_시각을_구분하고_로그_레벨_변경의_빈_목록은_v1_프롬프트에만_있다():  # N2, N3
+    system = build_messages(state_of("REQ-D02"))[0].content
+    assert "일 수로 바꿔 expires_days에 쓴다. 작업 구간의 종료 시각(end)이 아니다" in system
+    assert "extra_changes는 null이 아니라 빈 목록이다" in system
+    # v0과 공유하는 구조화 규칙은 그대로다 (v0 기준선을 건드리지 않는다)
+    assert "빈 목록" not in load_prompt("structure_rules.md")
 
 
 def test_시스템_메시지는_요청과_무관하게_같고_사용자_메시지에_요일_붙은_요청_시각이_있다():

@@ -3,6 +3,10 @@
 구조화 규칙(structure_rules.md)은 v0과 같은 파일이라 두 버전이 구조화에 같은 지침을 받는다. 다른 점은
 v1이 더한 것이다.
 
+0. 프롬프트(parse_request.md)에 규정 원문의 유형별 필수 항목(4장)과 표준 변경 목록(3장) 표를 읽어 넣는다.
+   v0은 규정 전체를 받아 유형 기준을 보지만 구조화 단계에는 규정 판단을 주지 않으므로, 유형을 고르는 데 필요한
+   표만 준다(근거 조항 열은 뺀다). 허용 기한과 작업 구간 종료 시각의 구분, 로그 레벨 변경의 extra_changes 빈
+   목록도 여기서만 더한다(structure_rules.md는 v0과 공유해서 고정).
 1. 구조화가 검증을 통과해도 판정에 필요한 값이 비어 있거나 틀리면 한 번 다시 묻는다.
    - 작업 시각(start): rules.json required_fields에 start가 있는 유형(배포, DB 변경, 표준 변경)에서 비어 있으면
      시간 조항(CHG-01, 05, 06, 10)을 검사할 수 없다 (리뷰 H1). 방화벽은 규정 4장의 필수 항목에 작업 시간이 없어
@@ -28,7 +32,14 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from app.agent.errors import ReviewIncomplete
-from app.agent.prompting import format_submitted_at, load_prompt, render_service_list, render_structure_rules
+from app.agent.prompting import (
+    format_submitted_at,
+    load_prompt,
+    render_policy_standard_list,
+    render_required_items,
+    render_service_list,
+    render_structure_rules,
+)
 from app.agent.state import GKState
 from app.agent.wire import change_request_schema, to_change_request
 from app.config import get_settings
@@ -55,7 +66,10 @@ _INVALID_WINDOW = (
 def build_messages(state: GKState) -> list[BaseMessage]:
     """시스템 메시지는 요청과 무관하게 같은 텍스트다. 같은 접두사를 모델 쪽 캐시가 재사용할 수 있다."""
     system = load_prompt("parse_request.md").format(
-        services=render_service_list(), structure_rules=render_structure_rules()
+        services=render_service_list(),
+        required_items=render_required_items(),
+        policy_standard_list=render_policy_standard_list(),
+        structure_rules=render_structure_rules(),
     )
     user = (
         f"요청 시각: {format_submitted_at(state['submitted_at'])}\n"

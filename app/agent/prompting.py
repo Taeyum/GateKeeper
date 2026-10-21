@@ -11,6 +11,7 @@ ensure_ascii=False로 쓴다. 이력(history.json)은 넣지 않는다. 이력�
 
 import hashlib
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -75,6 +76,49 @@ def render_service_list() -> str:
 def render_standard_changes() -> str:
     """규정 3장 표준 변경 목록을 rules.json에서 읽어 한 줄씩 쓴다. 분류 프롬프트가 같은 목록을 보게 하려는 것이다."""
     return "\n".join(f"- {spec.std_id} {spec.title}: {spec.condition}" for spec in load_rules().standard_changes)
+
+
+def _policy_table_rows(heading_keyword: str, columns: int) -> list[list[str]]:
+    """규정 원문에서 제목에 heading_keyword가 든 장(`## `)의 표를 읽어, 머리글 행을 빼고 앞쪽 columns개 열만 돌려준다.
+
+    규정을 고치면 원문만 고치면 되고 이 함수는 건드리지 않는다. 장이나 표를 못 찾으면 빈 프롬프트가 조용히
+    나가지 않도록 ValueError로 멈춘다.
+    """
+    text = load_policy_text()
+    heading = re.search(rf"^## .*{re.escape(heading_keyword)}.*$", text, re.MULTILINE)
+    if heading is None:
+        raise ValueError(f"규정 원문에서 '{heading_keyword}' 장을 찾지 못했다")
+    following = re.compile(r"^## ", re.MULTILINE).search(text, heading.end())
+    section = text[heading.end() : following.start() if following else len(text)]
+    table = [
+        [cell.strip() for cell in line.strip().strip("|").split("|")]
+        for line in section.splitlines()
+        if line.lstrip().startswith("|")
+    ]
+    rows = [row[:columns] for row in table[1:] if len(row) >= columns and not all(set(c) <= set("-: ") for c in row)]
+    if not rows:
+        raise ValueError(f"규정 원문의 '{heading_keyword}' 장에서 표를 읽지 못했다")
+    return rows
+
+
+def render_required_items() -> str:
+    """규정 4장 '변경 유형별 필수 항목' 표의 유형과 필수 항목을 한 줄씩 쓴다.
+
+    근거 조항 열은 뺀다. 구조화 단계는 위반 여부를 판단하지 않고(규정 판단은 policy_agent 몫),
+    본문이 어느 유형의 항목을 말하는지 보고 변경 유형을 고르는 데 필요한 정보만 준다.
+    """
+    return "\n".join(f"- {kind}: {items}" for kind, items in _policy_table_rows("변경 유형별 필수 항목", 2))
+
+
+def render_policy_standard_list() -> str:
+    """규정 3장 '표준 변경 목록' 표를 한 줄씩 쓴다.
+
+    render_standard_changes(rules.json)와 달리 원문을 읽는다. "다른 설정을 함께 바꾸거나 재시작이 필요하면
+    일반 변경"처럼 extra_changes와 restart_required를 채우는 단서가 원문의 조건 칸에만 있기 때문이다.
+    """
+    return "\n".join(
+        f"- {std_id} {title}: {condition}" for std_id, title, condition in _policy_table_rows("표준 변경 목록", 3)
+    )
 
 
 def render_static_context() -> dict[str, str]:

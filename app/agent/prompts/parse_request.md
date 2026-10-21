@@ -6,6 +6,21 @@ target은 아래 id 중 본문과 맞는 하나를 철자 그대로 쓴다. id�
 
 {services}
 
+# 변경 유형 고르기
+
+change_type은 대상 서비스의 종류가 아니라 요청이 바꾸려는 것으로 정한다. 규정은 유형마다 아래 항목을 요구한다. 본문이 어느 유형의 항목을 말하고 있는지 보고 고른다.
+
+{required_items}
+
+standard는 아래 표준 변경 목록에 있는 변경만 해당한다. 조건에 맞지 않으면 standard가 아니라 위 유형 중 하나다.
+
+{policy_standard_list}
+
 # 작성 규칙
 
 {structure_rules}
+
+# 추가 규칙
+
+- 허용 기한("2주", "60일")은 방화벽 규칙이 열려 있는 기간이다. 일 수로 바꿔 expires_days에 쓴다. 작업 구간의 종료 시각(end)이 아니다. end는 작업이 끝나는 시각이다.
+- 로그 레벨만 바꾸는 요청에서 다른 설정을 함께 바꾼다는 언급이 없으면 extra_changes는 null이 아니라 빈 목록이다. 위 extra_changes 규칙의 예외다.
