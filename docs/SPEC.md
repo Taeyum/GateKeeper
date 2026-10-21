@@ -127,7 +127,9 @@ Base의 채팅 화면과 다르게, 결재 업무 화면으로 만든다. 채팅
 | openai | gpt 계열 | gpt 계열 소형 | 예비 |
 
 - 평가용 Judge(`MODEL_JUDGE`)는 시스템 모델과 다른 모델로 고정한다 (기본 `claude-opus-5-5`).
-- LangChain 구조화 출력은 `with_structured_output`을 쓰고, provider마다 동작을 테스트로 확인한다.
+- LangChain 구조화 출력은 `with_structured_output`을 쓰고, provider마다 동작을 테스트로 확인한다. 실제 provider는 모두 `method="json_schema"`(네이티브 구조화 출력)를 명시한다. anthropic 5.5 모델은 `tool_choice` 강제를 지원하지 않아 기본 방식(function_calling)에 기대지 않는다.
+- temperature는 ollama와 openai에서 0이다. anthropic 5.5 모델은 기본값 외의 temperature를 거부하므로 보내지 않는다 (같은 요청의 반복 실행 일관성은 평가 지표로 따로 본다).
+- 규칙 엔진 공개 함수는 마지막 선택 인자 `data: GKData | None = None`으로 데이터를 주입받는다(테스트의 가짜 캘린더/CMDB/티켓용). `None`이면 `gatekeeper_data`를 읽는다. 대안 시간대는 `next_valid_window`가 찾는다.
 
 ## 9. 디렉터리
 
