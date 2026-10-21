@@ -55,8 +55,9 @@ python eval/upload_dataset.py --split dev
 # gk-eval은 Claude Code 밖의 별도 터미널에서 사용자가 직접 실행한다 (출력이 세션에 남지 않게. 건수만 나온다).
 python eval/upload_dataset.py --split eval
 
-# 단계마다: dev 10건, 로컬 모델, 1회 (--langsmith를 주면 측정 중 추적을 켠다. 같은 플래그끼리 비교한다)
-python eval/run_eval.py --version v1 --split dev --reps 1 --provider ollama
+# 단계마다: dev 10건, Claude API, 1회 (--langsmith를 주면 측정 중 추적을 켠다. 같은 플래그끼리 비교한다)
+# 5단계 마무리부터 dev도 anthropic으로 한다 (이 PC에서 ollama가 느림). 4단계 v0와 5단계 1차 v1의 ollama 측정은 기록으로 남아 있다.
+python eval/run_eval.py --version v1 --split dev --reps 1 --provider anthropic
 
 # 9단계: eval 20건, Claude API, 버전 3개 x 3회
 python eval/run_eval.py --version v0 --split eval --reps 3 --provider anthropic --langsmith

@@ -126,8 +126,8 @@ Base의 채팅 화면과 다르게, 결재 업무 화면으로 만든다. 채팅
 | provider | MODEL_MAIN | MODEL_SMALL | 용도 |
 |---|---|---|---|
 | fake | 테스트가 정한 응답 | 테스트가 정한 응답 | 단위 테스트, 클라우드 세션 (Base `agent/fake_llm.py` 아이디어 참고. 평가에는 쓰지 않는다) |
-| ollama | qwen3:8b | qwen3:0.6b | 개발, dev 평가 |
-| anthropic | claude-sonnet-5-5 | claude-haiku-5-5 | 최종 평가, 데모 |
+| ollama | qwen3:8b | qwen3:0.6b | 로컬 개발, 시연. 4단계와 5단계 1차의 dev 측정 기록이 있다. RAG 임베딩(bge-m3)은 provider와 무관하게 ollama |
+| anthropic | claude-sonnet-5-5 | claude-haiku-5-5 | dev 평가(5단계 마무리부터), 최종 평가, 데모 |
 | openai | gpt 계열 | gpt 계열 소형 | 예비 |
 
 - 평가용 Judge(`MODEL_JUDGE`)는 시스템 모델과 다른 모델로 고정한다 (기본 `claude-opus-5-5`).

@@ -58,7 +58,7 @@ LLM_PROVIDER=anthropic bash sh/run_api.sh   # Claude API
 bash sh/run_web.sh                          # 화면 (web/)
 
 # 평가
-python eval/run_eval.py --version v1 --split dev --reps 1 --provider ollama
+python eval/run_eval.py --version v1 --split dev --reps 1 --provider anthropic
 python eval/report.py
 ```
 
