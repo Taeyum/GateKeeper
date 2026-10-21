@@ -7,7 +7,7 @@
 | 1 | 저장소 파악과 기반 구조 (설정, LLM 팩토리, 스키마, 로더, 규칙 엔진 시그니처) | 완료 (pytest 77 통과, ollama live 1건 통과) | 8건 (분할 목록은 `docs/reports/stage1.md`) |
 | 2 | 규칙 엔진과 단위 테스트 (클라우드) | 완료 (PR #1 머지 45bced2. 머지본 `pytest -q` 347 통과, skip 0, dev 10건 라벨 일치 10/10) | 5건 (90e4951, 1ca7896, 2d57cd2, f738b8d, 3a6fb76) |
 | 3 | MCP 서버 (Resource, Tool) (로컬, 2단계와 동시) | 완료 (실제 엔진과 합쳐 `pytest -q` 354 통과, skip 0) | 7건 (d2f2041 ~ 7141c8d) + 후속 fix 1건 (3aa1050, H2) |
-| 4 | v0 기준선과 평가 하네스 | 대기 | |
+| 4 | v0 기준선과 평가 하네스 | 완료 (`pytest -q` 484 통과, 기본 실행에서 빠지는 live 6건 중 v0 live 1건 통과, v0 dev 평가 1회 기록) | 커밋 12건 제안 (분할 목록은 `docs/reports/stage4.md`, 아직 커밋 전) |
 | 5 | v1 (구조화, 라우팅, 병렬 서브에이전트, 판정) | 대기 | |
 | 6 | v2 (RAG, Validator) | 대기 | |
 | 7 | HITL과 API (체크포인터, SSE, 역할 확인, 마스킹) | 대기 | |
@@ -19,6 +19,7 @@
 
 | 단계 | 버전 | provider | 판정 정확도 | 위반 F1 | 구조화 정확도 | 지연 p95 | 토큰/요청 | 메모 |
 |---|---|---|---|---|---|---|---|---|
+| 4 | v0 | ollama (qwen3:8b) | 50.0% (5/10) | 20.0% (P 16.7%, R 25.0%) | 93.2% | 65.5초 (평균 32.7초, n=10이라 최댓값) | 7,871 (입력 7,257 + 출력 613), LLM 1회 | 기준선, reps=1이라 일관성은 "-". 위험도 62.5%(n=8), 오인용 15(엄격 18), 환각 0, 대안 품질 3.17(n=6, 비독립 Judge). `results/20261021-144948_v0_dev.summary.json`, 커밋 전(dirty) 측정이라 git 해시는 기준점 `c5fd852` |
 
 ## 결정 기록
 
@@ -72,6 +73,24 @@
 - (3단계) 규칙 엔진 본문이 필요한 테스트(13건)는 `tests/_engine.py`의 `requires_engine`을 붙인다. 엔진 준비 여부는 `verdict_from([], False)`를 한 번 호출해 `NotImplementedError`인지로 자동 판단하므로, 2단계가 머지되면 아무것도 바꾸지 않아도 켜진다. 3단계용 헬퍼를 `tests/conftest.py`가 아니라 새 파일에 둔 것은 2단계 클라우드 세션도 conftest에 경계값 픽스처를 추가할 수 있어 같은 파일을 고치면 머지 충돌이 나기 때문이다(리뷰 G1). 모의 엔진을 끼워 13건이 실제로 실행되고 통과하는 것을 확인했다. 엔진을 가짜로 바꿔 끼워 Tool의 배선(인자 전달, KST 정규화, 결과 직렬화, `data` 주입, 내부 오류 마스킹)은 지금 검증한다.
 - (3단계 후속, 리뷰 H2) `check_policy`/`check_window`도 엔진을 부르기 전에 target을 CMDB에서 먼저 확인해 없으면 `NOT_FOUND`, 그 뒤 엔진의 `ValueError`(작업 구간 오류 등)는 `INVALID_ARGUMENT`로 바꾼다. 2단계 엔진은 CMDB에 없는 대상과 종료 ≤ 시작에 `ValueError`를 내는데, 3단계 때는 엔진이 stub이라 드러나지 않았고 병합본에서는 가려진 내부 오류로 보여 클라이언트가 대상 오타(`MCPNotFoundError`)와 서버 장애를 구분하지 못했다. 메시지 문자열 매칭에 기대지 않고 대상 존재 확인을 먼저 하는 방식이다. 새 테스트 7건은 수정 전 코드에서 모두 실패하고 수정 후 실제 엔진과 함께 통과한다.
 
+- (4단계) v0에도 규정, CMDB, 캘린더, 장애 티켓을 모두 주고 이력(history)만 뺀다. "정보를 안 줘서 틀렸다"는 반박을 막고, 차이를 구조(Tool, 라우팅, 검증)로만 설명하려는 것이다. 이력은 v2의 RAG가 더하는 정보라서 위험도 상향과 `similar_history`는 v2에서만 생긴다. v0 프롬프트에 "이력 미제공, similar_history는 null"을 적어 HIS id를 지어내지 않게 했다.
+- (4단계) v0 출력은 규칙 엔진으로 보정하지 않고(절대 규칙 2의 예외인 기준선), 프롬프트는 한 번 쓰고 dev 1회 측정을 기록한다. 잘림, 스키마 오류 같은 기계적 문제만 고치고 정확도를 보고 프롬프트를 손보지 않는다. 구조화 규칙은 `app/agent/prompts/structure_rules.md` 한 파일이라 5단계 parse_request가 같은 파일을 쓰면 v0과 v1이 구조화에 같은 지침을 받는다. Ollama `json_schema`는 스키마를 문법 제약으로만 쓰고 필드 설명을 모델에 보여주지 않아서 필드 규칙을 프롬프트 본문에 적었다.
+- (4단계) 측정 대상은 ⑥ approval_gate 직전의 `Recommendation`이다. v0은 그래프가 노드 하나라 거기서 끝나고, v1/v2도 같은 지점에서 멈춘 상태를 잰다. 사람 승인 이후는 사람의 결정이라 시스템 품질이 아니고, 평가 중에 `interrupt()`로 멈추면 하네스가 요청마다 재개를 구현해야 한다. 모든 버전이 `await graph.ainvoke(state)` 하나로 같은 출력(`structured`, `recommendation`)을 내는 것이 계약이다.
+- (4단계) 평가기는 측정 대상과 독립이다. 규칙 엔진의 정규화 함수를 쓰지 않고 평가기 안에서 따로 정규화한다(규정 조항 ID 목록만 규정 문서 파서에서 가져온다). 구조화 필드의 null과 false는 서로 다른 값이다(엔진은 같게 보지만 평가는 "본문에 적혀 있었는가"를 본다). gold가 range면 start는 날짜로, end는 마지막 순간(end - 1마이크로초)의 날짜로 비교한다. 정의 전체는 EVAL.md 3장.
+- (4단계) 오인용은 gold가 긴급이면 CHG-07, 표준 변경이면 gold의 STD ID를 허용하고(위반은 아니지만 판정의 근거 조항), 면제된 조항(CHG-01/05/10)을 citations에 넣으면 오인용이다. 허용 목록 없는 엄격 수치도 같이 남긴다. v0 프롬프트의 citations 정의를 같은 규칙으로 적어서 규칙을 모른 채 감점되지 않게 했다(리뷰 I2). 5단계 v1/v2도 같은 정의를 쓴다(citations는 코드가 violations에서 만들고 면제는 explanation과 warnings로).
+- (4단계) 일관성은 모든 반복이 오류 없이 같은 판정을 낸 요청의 비율이다(오류가 한 번이라도 있으면 일관적이지 않음, 반복 1회면 "-"). 위반 P/R/F1은 분모가 0이면 0.0이고 gold와 pred가 모두 비었을 때만 "-"다. 오류 난 실행은 모든 지표에서 오답이다.
+- (4단계) 대안 품질 Judge: 모델은 `MODEL_JUDGE`이고, ollama 기본은 main과 같은 qwen3:8b라 summary에 `judge.independent=false`를 남기고 리포트에 "비독립 평가"를 적는다(추세용, 9단계 anthropic의 opus는 독립). Judge에는 v0과 같은 정적 컨텍스트(규정, CMDB, 캘린더, 티켓)를 줘서 새 위반을 직접 확인하게 한다. 시스템이 대안을 내지 않았으면 호출 없이 1점이다. Judge 사용량은 시스템 사용량과 수집기를 따로 둔다.
+- (4단계) warm-up(리뷰 I1): split의 첫 요청 1건을 그래프로 한 번 실행하고 버린다. 모델 로드와 정적 프롬프트 접두사 캐시가 함께 데워진다(실측: 같은 접두사 두 번째 처리 7.8초 → 0.2초). 안 하면 dev n=10에서 p95(= 최댓값)가 첫 요청의 캐시 미스를 재게 된다. 모든 버전에 같은 방식이고 eval에서는 결과를 기록하지도 출력하지도 않는다. 출력 형식 실패(`ValueError`)는 측정할 행동이라 넘어가고 그 밖의 실패(연결, 모델 없음, 인증, 시간 초과)는 설정 문제라 멈춘다. 캐시 때문에 지연은 실서비스처럼 캐시가 있는 조건이다(보고서에 적는다).
+- (4단계) 실행 전에 provider와 모델 이름이 맞는지 검사하고 안 맞으면 LLM을 부르기 전에 멈춘다(리뷰 I3). `.env`의 MODEL_*는 `--provider`를 바꿔도 그대로 적용되기 때문이다. `config.py`의 `model_for`는 바꾸지 않았고 `.env.example`에 "비워 두면 provider 기본값"을 적었다.
+- (4단계) LangSmith(리뷰 I4, I5): `--langsmith`면 측정 중 추적을 켜고 프로젝트 이름을 `gk-<버전>-<split>-<시각>`으로 한다. 없으면 `.env`의 `LANGCHAIN_TRACING_V2=true`가 있어도 강제로 끈다(`tracing_context(enabled=False)`). 같은 플래그끼리만 비교하고 리포트가 섞이면 경고한다. Judge와 warm-up은 추적하지 않는다. 측정 후 점수를 실험으로 올리는 replay 방식은 구현하지 않았다. gk-dev는 업로드했고(10건, trace 10건 확인), gk-eval 업로드는 Claude Code 밖의 별도 터미널에서 사용자가 직접 실행한다(`!` 실행도 출력이 세션에 남으므로 쓰지 않는다).
+- (4단계) 마스킹(`app/masking.py`)을 7단계에서 앞당겨 순수 함수로 지금 넣었다. 4단계가 요청 본문을 처음으로 LLM, Judge, LangSmith에 보내기 때문이다(절대 규칙 5). 그래프 입력에는 `masked_text`만 넣고 `raw_text`는 넣지 않는다(추적이 켜지면 상태가 LangSmith로 간다). 7단계 미들웨어는 이 함수를 재사용한다.
+- (4단계) eval 유출 방지(절대 규칙 1): eval 실행은 jsonl에 ID와 점수, 판정과 위반 ID만 남기고(설명, 근거, Judge 근거, 본문 없음) 예외는 타입만 남기며, summary에는 요청별 목록이 없고 터미널은 집계만 낸다. 라벨 검증 오류에서 본문(`input_value`)이 새지 않게 `eval/data.py`가 감싼다(`from None`으로 트레이스백에서도 제거). `--limit`은 dev에서만 허용한다. 테스트는 실제 eval 파일을 열지도 복사하지도 않고 dev를 eval로 바꾼 대역으로 경로를 확인하며, 읽은 파일의 전체 경로를 감시해 실제 정답 파일이 열리지 않았음을 직접 검사한다.
+- (4단계) 토큰 집계는 호출 수와 모델별 토큰을 함께 세는 `UsageCollector`(`app/llm/usage.py`)다(langchain-core의 `UsageMetadataCallbackHandler`는 호출 수를 세지 않는다). reasoning 토큰은 출력 토큰에 포함된 값으로 따로 남기고, 호출 하나의 입력 토큰 최댓값으로 컨텍스트 잘림을 감지한다(Ollama는 조용히 자른다). fake 모델도 구조화 출력이 `_generate`와 콜백을 거치게 고쳐서 호출 수 집계를 테스트할 수 있다.
+- (4단계) `GKState`에는 v0이 쓰는 필드만 두고 `errors`(리스트 합치기)와 `metrics`(카운터 합산)에 reducer를 지금 둔다. v1의 병렬 서브에이전트가 같은 키를 동시에 쓸 때 `InvalidUpdateError`가 나지 않게 하려는 것이다. `build_graph(version=None)`은 None이면 `GK_VERSION`을 따르고, v1/v2는 `NotImplementedError`다.
+- (4단계) 결과 파일: `results/<날짜시각>_<버전>_<split>.jsonl`(요청별, git 제외)과 `.summary.json`(집계, 커밋), `report.md`와 `charts/<split>_*.png`. report는 split마다 같은 provider의 버전별 최신 summary를 쓰고, 모델, 요청 수, 반복 횟수, 추적 여부, 데이터 해시가 버전마다 다르면 경고한다(커밋 차이는 단계마다 당연해서 경고하지 않는다). p95는 nearest-rank라 n=10이면 최댓값이다.
+- (4단계) v0 첫 측정에서 본 약점(프롬프트는 손대지 않음): 7건이 존재하지 않는 CHG-06 충돌을 주장했고(정답에 CHG-06이 있는 dev 요청은 없다), CHG-01을 건 6건 중 정답인 REQ-D01을 뺀 5건이 오탐이다(예: 금요일 16~17시를 금지 시간대와 겹친다고 판단). "다음 주 화요일"을 10-25로 풀었고(정답 11-03) 종료 시각을 시작과 같게 뒀다. 설명에 "자동 승인"이라 쓰고 판정은 "승인"을 냈고, 표준 변경 REQ-D10은 동결(CHG-10)을 놓쳐 승인했다. 입력 조립(요일 표기, 규정/데이터 포함)은 테스트로 고정되어 있어 하네스 문제가 아니라 단독 LLM(qwen3:8b)의 실제 오류다. EVAL.md 6장 기준으로 v0 판정 정확도가 90%를 넘지 않아 "v0이 너무 잘 맞는" 경우는 아니다.
+- (4단계) 의존성: `langgraph` 1.2.16, `matplotlib` 3.11.2을 추가했고 `langsmith`(0.14.11)는 직접 의존으로 명시했다. 설치하며 `websockets`가 17.3에서 16.1.1로 내려갔고 `uv pip check`와 기존 테스트 354건은 그대로 통과했다.
+
 ## 남은 이슈
 
 - H1 (5단계 계획에서 처리): `app/rules_engine/context.py`는 시작 시각(`start`)이 없으면 시간 조항(CHG-01, 05, 06, 10)을 검사하지 않고 넘어간다. 엔진만 보면 맞는 처리지만, LLM이 `start`를 못 뽑으면 동결 기간이나 주말에 걸리는 배포가 "승인"으로 나올 수 있다. dev 라벨 10건은 모두 `start`가 있어 테스트로 드러나지 않는다. 근거: change_policy.md 4장은 배포, DB 변경, 표준 변경의 필수 항목에 작업 시간을 넣고 있다. 5단계 계획에서 처리 방식을 근거와 함께 제안한다(예: `parse_request`가 이 유형의 `start` 누락을 필수 항목 누락으로 보고 1회 재시도하고, 그래도 없으면 `decide`가 "작업 시각이 없어 시간 조항을 확인하지 못함"을 설명에 넣고 자동 승인으로 끝내지 않는다). 판정 값을 어떻게 둘지는 계획에서 묻는다. 엔진(2단계 코드)은 바꾸지 않는다.
@@ -79,6 +98,13 @@
 - 서버 stderr에는 의도한 `ToolError`(NOT_FOUND 등)도 ERROR 로그로 찍힌다. 동작에는 영향이 없고 로그만 시끄럽다.
 - Tool 개수 5개를 고정한 테스트(`test_mcp.py`)는 6단계에서 `search_history`를 추가할 때 6개로 바꾼다.
 - `next_valid_window`, `risk_from`, `is_standard`는 MCP Tool이 아니다(SPEC 5장은 Tool 5개). 5단계 decide가 엔진을 직접 호출할지 MCP로 부를지는 5단계에서 정한다.
-- anthropic/openai의 구조화 출력은 키가 없어 확인하지 못했다. `.env`에 키를 넣고 `pytest -m llm -s`로 확인한다. openai는 `json_schema` strict 요건(모든 필드 required)과 `ChangeRequest`의 기본값 필드가 맞는지도 이때 본다.
-- `MODEL_JUDGE` 기본값이 ollama에서는 main과 같은 모델(qwen3:8b)이다. 4단계에서 dev 평가의 Judge를 어떻게 둘지 정한다.
-- thinking/effort를 설정하지 않아 anthropic 지연과 토큰 측정에 thinking이 섞인다. 4단계에서 측정 방식을 정할 때 같이 본다.
+- anthropic/openai의 구조화 출력은 키가 없어 확인하지 못했다. `.env`에 키를 넣고 `pytest -m llm -s`로 확인한다. openai는 `json_schema` strict 요건(모든 필드 required)과 `ChangeRequest`의 기본값 필드가 맞는지도 이때 본다. 4단계에서 구조화 스키마가 둘 더 생겼다: `V0Output`(`ChangeRequest`와 `Recommendation`을 한 번에 내는 중첩 스키마)와 `JudgeScore`(`score`에 `ge=1, le=5`). Anthropic 네이티브 구조화 출력이 정수 범위 제약(`minimum`/`maximum`)과 중첩 `$defs`를 받는지는 키가 생기면 이 둘로 먼저 본다(ollama qwen3:8b는 둘 다 통과). 9단계 전에 확인한다.
+- J1 (리뷰, 5단계 첫 커밋): "판정과 자기 위반 목록의 모순" 지표를 추가한다. pred 위반 목록의 구분(rules.json의 금지/보완)으로 규정 1장 판정을 다시 계산해 pred 판정과 다른 실행의 비율이다(표준 변경 여부는 pred 판정이 "자동 승인"인지로 봄, `rules_engine` 대신 rules.json만 읽는다). v0 dev 10건 중 5건(REQ-D02, D03, D06, D07, D08)이 금지 조항을 위반으로 적고도 "조건부 승인"을 냈다. 기존 v0 측정은 LLM을 다시 부르지 않고 저장된 jsonl로 다시 채점해 summary와 report에 반영한다. 커밋 `feat(eval): 판정과 위반 목록의 자기모순 지표`.
+- J2 (리뷰, 필수, 키가 생기는 대로): Anthropic 구조화 출력 확인. `V0Output`의 중첩 `$defs`와 `JudgeScore`의 정수 범위 제약이 네이티브 구조화 출력에서 받아들여지는지 `LLM_PROVIDER=anthropic pytest -q -m llm`(v0 1건, Judge 1건 포함)으로 본다. 안 되는 제약은 스키마에서 빼고 코드 검증으로 옮긴다. 5단계 v1도 같은 방식을 쓴다.
+- 4단계에서 정리됨: ollama dev 평가의 Judge는 main과 같은 qwen3:8b(비독립)이고 summary와 리포트에 그렇게 표시한다. 독립 Judge(opus)는 9단계 anthropic 평가에서만 쓴다.
+- anthropic은 thinking/effort를 API 기본값으로 둬서 지연과 토큰에 thinking이 섞인다. 4단계에서 측정은 reasoning 토큰을 출력 토큰에서 따로 집계해(`reasoning_tokens`) 리포트에 드러내는 것으로 정리했다. 실제 anthropic 값은 9단계에서 처음 본다.
+- replay 실험 업로드(로컬 점수를 LangSmith 실험으로 올리기)는 이번 단계에서 하지 않았다(리뷰 I4). 9단계에 시간이 남으면 추가한다. 지금은 측정 중 추적(프로젝트 `gk-<버전>-<split>-<시각>`)만 있다.
+- gk-eval Dataset 업로드는 아직 하지 않았다. 9단계 전에 사용자가 Claude Code 밖의 별도 터미널에서 `python eval/upload_dataset.py --split eval`로 실행한다(리뷰 I5, 출력은 건수뿐).
+- `eval/pricing.json`의 단가는 비어 있다. 채우기 전에는 예상 비용이 "-"다(사용자가 채움). 로컬 모델은 0을 넣으면 0으로 계산한다.
+- 7단계: API 경로에서 `raw_text`가 LangSmith 추적으로 나가지 않게 한다. 평가 하네스는 그래프 입력에 `masked_text`만 넣지만, API는 `raw_text`와 `masked_text`를 모두 상태에 둔다(SPEC 2장).
+- v0 dev 측정은 커밋 전(dirty) 작업 트리에서 했다. summary의 git 해시는 기준점 `c5fd852`이고 dirty 표시가 있다. 4단계를 커밋한 뒤 같은 명령을 다시 돌리면 해시가 맞는 측정이 되지만 모델 출력이 달라질 수 있다(qwen3:8b는 temperature 0이라 같은 출력을 기대하지만 확인은 하지 않았다). 비교 기준은 지금 기록한 1회다.

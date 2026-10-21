@@ -72,7 +72,7 @@
 
 | 버전 | 구성 | 비고 |
 |---|---|---|
-| v0 | LLM 노드 하나. 규정 원문 + CMDB + 변경 캘린더 + 장애 티켓 + 요청을 프롬프트에 넣고 `structured`와 `Recommendation`을 한 번에 출력 | 정보는 v1, v2와 같고 구조만 다르다. 출력 스키마가 같아 평가 코드도 같다 |
+| v0 | LLM 노드 하나. 규정 원문 + CMDB + 변경 캘린더 + 장애 티켓 + 요청을 프롬프트에 넣고 `structured`와 `Recommendation`을 한 번에 출력 | 정보는 v1, v2와 같고 구조만 다르다. 출력 스키마가 같아 평가 코드도 같다. 과거 이력(history)은 주지 않는다. 이력은 v2의 RAG가 더하는 정보라서 위험도 상향과 `similar_history`는 v2에서만 생긴다. 출력은 규칙 엔진으로 보정하지 않는다(판정은 코드가 정한다는 원칙의 유일한 예외인 기준선) |
 | v1 | ① ② ③(policy, impact) ④ ⑥ ⑦ | RAG와 Validator 없음 |
 | v2 | 전체 | |
 
@@ -139,6 +139,9 @@ Base의 채팅 화면과 다르게, 결재 업무 화면으로 만든다. 채팅
 app/
   config.py                설정 (pydantic-settings)
   llm/factory.py           provider, 역할별 LLM 생성
+  llm/fake.py              테스트용 가짜 모델 (구조화 출력도 콜백을 거친다)
+  llm/usage.py             LLM 호출 수와 모델별 토큰 집계 콜백 (평가용)
+  masking.py               요청 본문 비밀값 마스킹 (LLM, Judge, LangSmith로 보내기 전. 7단계 미들웨어가 재사용)
   schemas.py               ChangeRequest, Recommendation 등
   data_loader.py           gatekeeper_data 로더
   rules_engine/            규칙 엔진 (순수 함수, 조항별 모듈)
@@ -147,11 +150,21 @@ app/
   agent/
     state.py
     graph.py               GK_VERSION에 따라 그래프 조립
+    prompting.py           프롬프트 파일 로드와 해시, 정적 컨텍스트 렌더링 (v0과 Judge가 공유)
+    prompts/               baseline_v0.md, structure_rules.md (구조화 규칙. v0과 v1 parse_request가 공유)
     nodes/                 parse, classify, policy_agent, impact_agent, history_agent, decide, validate, approval, finalize, baseline_v0
   persistence/checkpointer.py
   api/                     main.py(lifespan), routes, deps(역할 확인), middleware(마스킹), sse
 eval/
-  upload_dataset.py, run_eval.py, evaluators.py, judge_prompt.md, report.py
+  upload_dataset.py        LangSmith Dataset(gk-dev, gk-eval) 업로드
+  run_eval.py, harness.py  실행 CLI와 실행 로직 (warm-up, 순차 실행, 채점, 집계, jsonl/summary 저장)
+  evaluators.py            지표 (순수 함수)
+  judge.py, judge_prompt.md  대안 품질 Judge
+  tracing.py               측정 중 LangSmith 추적 켜기/끄기 (--langsmith)
+  data.py                  정답셋 로더 (검증 오류에 본문이 새지 않게 감싼다)
+  report.py                report.md와 차트 PNG
+  pricing.json             모델별 단가 (직접 채움)
+results/                   summary.json, report.md, charts/ (jsonl은 git 제외)
 scripts/build_index.py
 tests/
 web/                       Vue 3 + Vite 화면
