@@ -5,6 +5,7 @@
 """
 
 import pytest
+from langsmith import tracing_context
 
 from app import config, data_loader
 from app.config import Settings
@@ -31,6 +32,19 @@ def _hermetic(request, monkeypatch):
     yield
     data_loader.clear_caches()
     reset_fake_responses()
+
+
+@pytest.fixture(autouse=True)
+def _no_langsmith_tracing(monkeypatch):
+    """테스트 중에는 llm 마크를 포함해 LangSmith로 추적을 보내지 않는다.
+
+    .env의 LANGCHAIN_TRACING_V2=true가 load_dotenv로 들어와도 override=False라 여기서 정한 값이 이긴다.
+    langsmith가 환경 변수 읽기를 캐시할 수 있어서 tracing_context로도 끈다 (평가 하네스와 같은 방식).
+    """
+    for name in ("LANGCHAIN_TRACING_V2", "LANGCHAIN_TRACING", "LANGSMITH_TRACING", "LANGSMITH_TRACING_V2"):
+        monkeypatch.setenv(name, "false")
+    with tracing_context(enabled=False):
+        yield
 
 
 @pytest.fixture
