@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     embed_model: str = "bge-m3"
     gk_data_dir: Path = Path("gatekeeper_data")
     gk_checkpoint_db: Path = Path(".data/checkpoints.sqlite")
+    # RAG 색인(이력 벡터)을 두는 폴더. sh/build_index.sh가 만든다. .data/는 git 제외다.
+    gk_rag_dir: Path = Path(".data/rag")
 
     ollama_base_url: str = "http://127.0.0.1:11434"
     # v0 프롬프트(규정 원문 + CMDB + 캘린더 + 티켓)가 길어서 Ollama 기본 컨텍스트로는 조용히 잘린다.
@@ -85,6 +87,10 @@ class Settings(BaseSettings):
     @property
     def checkpoint_db(self) -> Path:
         return _resolve(self.gk_checkpoint_db)
+
+    @property
+    def rag_dir(self) -> Path:
+        return _resolve(self.gk_rag_dir)
 
 
 @lru_cache

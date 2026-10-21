@@ -16,6 +16,9 @@ fastmcp>=4.1
 # 그래프 (v0 기준선부터 LangGraph StateGraph로 조립한다)
 langgraph>=1.0
 
+# RAG 색인의 전수 코사인 검색 (이력 100건, app/rag/store.py)
+numpy>=1.26
+
 # 평가 (LangSmith Dataset/추적, 비교 차트)
 langsmith>=0.4
 matplotlib>=3.9
