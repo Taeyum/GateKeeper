@@ -11,7 +11,7 @@
 | 5 | v1 (구조화, 라우팅, 병렬 서브에이전트, 판정) | **진행 중**. v1 그래프 조립까지 끝났고 v1 dev 첫 측정은 판정 정확도 40%(4/10)로 v0의 50%보다 낮다(오류 2건: REQ-D01, REQ-D07이 ReviewIncomplete). 원인은 엔진이 아니라 parse_request 입력이라 N1~N3 반영 뒤 재측정한다. 남은 일: N1 ReviewIncomplete 사유를 dev jsonl에 남기고 원인 수정, N2 parse_request 프롬프트에 변경 유형 정의 주입, N3 STD-01의 extra_changes 빈 목록 처리, K5 explanation을 규정 번호 없는 쉬운 한국어로(decide 프롬프트). 첫 측정 결과는 `results/20261021-173455_v1_dev.summary.json`에 남기고 "1차, 수정, 2차"로 비교한다. 상세는 `docs/handoff/feedback.md` | 첫 측정과 문서 갱신 4건 (4eef2ba ~ 2727dc8) |
 | 6 | v2 (RAG, Validator) | 대기 | |
 | 7 | HITL과 API (체크포인터, SSE, 역할 확인, 마스킹) | 대기 | |
-| 8 | 화면 (요청자, 승인자) | 대기 | |
+| 8 | 화면 (요청자, 승인자) | 완료(목업 기준, 실제 API 연결은 7단계 뒤) | |
 | 9 | 최종 평가 (eval 20건 x 3버전 x 3회, Claude API) | 대기 | |
 | 10 | 마무리 (README, 리뷰, 데모 시나리오) (클라우드) | 대기 | |
 
