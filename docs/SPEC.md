@@ -44,12 +44,12 @@
 
 | 노드 | 하는 일 | 구현 메모 |
 |---|---|---|
-| ① parse_request | 자연어 → `ChangeRequest` | LLM 구조화 출력. 프롬프트에 `submitted_at`과 시간대를 넣어 "이번 주 금요일", "내일 새벽"을 풀게 한다. 본문에 없는 값은 null. 출발지 단일 IP는 /32로 정규화. 검증 실패 시 1회 재시도. 구조화가 검증을 통과해도 rules.json `required_fields`에 `start`가 있는 유형(배포, DB 변경, 표준 변경)에서 작업 시각이 비었거나 대상이 CMDB에 없으면 피드백을 붙여 1회 다시 묻는다(LLM 호출은 최대 2회, 재시도 예산 하나를 공유). 다시 물어도 시각이 없으면 지어내지 않고 진행해 decide가 경고하고, 대상이 없으면 `ReviewIncomplete`로 판정을 만들지 않는다. anthropic은 `WireChangeRequest`로 받아 도메인 모델로 돌린다 |
+| ① parse_request | 자연어 → `ChangeRequest` | LLM 구조화 출력. 프롬프트에 `submitted_at`과 시간대를 넣어 "이번 주 금요일", "내일 새벽"을 풀게 한다. 본문에 없는 값은 null. 출발지 단일 IP는 /32로 정규화. 검증 실패 시 1회 재시도. 구조화가 검증을 통과해도 rules.json `required_fields`에 `start`가 있는 유형(배포, DB 변경, 표준 변경)에서 작업 시각이 비었거나, 작업 구간의 종료가 시작보다 늦지 않거나(규칙 엔진과 `get_calendar`가 거절하는 입력), 대상이 CMDB에 없으면 피드백을 붙여 1회 다시 묻는다(LLM 호출은 최대 2회, 재시도 예산 하나를 공유). 종료가 없을 때의 기본값(시작 + rules.json 기본 작업 시간)은 코드가 계산해 피드백에 적는다. 다시 물어도 시각이 없으면 지어내지 않고 진행해 decide가 경고하고, 대상이 없거나 작업 구간이 여전히 틀리면 `ReviewIncomplete`로 판정을 만들지 않는다. 시스템 프롬프트에는 규정 원문의 유형별 필수 항목(4장, 근거 조항 열 제외)과 표준 변경 목록(3장)을 읽어 넣어 변경 유형을 고르게 한다(v0은 규정 전체를 받는다). anthropic은 `WireChangeRequest`로 받아 도메인 모델로 돌린다 |
 | ② classify | 경로 결정 | 엔진이 표준 변경 여부(STD-01/02 조건)와 긴급 유효성(티켓 조회)을 확정하고, 작은 모델은 본문만 보고 유형과 긴급 여부를 따로 분류해 parse 결과를 점검한다. 표준/긴급 여부가 다르거나 호출이 실패하면 route만 general로 돌리고(fail-safe) 엔진 확정값과 판정은 그대로 둔다. 불일치는 `warnings`에 남기고, 7단계 approval_gate는 route가 standard일 때만 자동 승인을 실행한다 |
 | ③ policy_agent | 규정 검사 | 자기 상태를 가진 컴파일된 서브그래프(`check_policy` → `read_rules` → `write_notes`). MCP `check_policy` 결과가 위반의 원본이고 `violations[].evidence`는 엔진 문장 그대로다. LLM은 `rules://CHG-xx` 원문을 읽고 조항별 쉬운 설명(`notes`)과 요약만 쓴다. 엔진 결과에 없는 조항 ID는 버린다. Tool 호출은 코드가 정한다 |
 | ③ impact_agent | 영향도 | 컴파일된 서브그래프(`lookup` → `summarize`). MCP `get_service_info`, `get_calendar`로 등급, 의존 서비스, 같은 시간대 변경을 조회해 요약. 작업 시각이 없으면 캘린더는 생략. 조회가 실패하면 "확인 불가" |
 | ③ history_agent | 이력 검토 (v2) | MCP `search_history`로 상위 3건 검색 후 요약. 같은 서비스 + 같은 유형 + 장애가 있으면 `history.bump = true` |
-| ④ decide | 판정과 설명 | 판정(`verdict_from`), 위험도(`risk_from`, 이력 상향은 v2), 인용 조항(위반 조항 + 유효한 긴급이면 CHG-07 + 표준이면 STD id)은 코드가 계산한다. LLM은 설명, 조건 목록, 대안 일정 제안만 쓴다. 시간 조항(CHG-01, 05, 06, 10) 위반이 있으면 일정 대안이 필요하고, LLM이 낸 일정을 `check_window`로 다시 검사해 위반이거나 요청 시각 이전이거나 없으면 위반 근거를 알려 1회 재생성, 그래도 안 되면 `next_valid_window`가 찾은 가장 빠른 통과 시간대로 대체한다. 시작 시각이 없으면 확인하지 못한 시간 조항을 코드가 계산해 경고와 설명에 붙이고 판정은 엔진 값 그대로다(자동 승인은 나오지 않는다). 규정 검사를 못 얻었으면 `ReviewIncomplete`. 설명 LLM이 실패하면 엔진 근거 문장으로 만든 설명으로 대신한다 |
+| ④ decide | 판정과 설명 | 판정(`verdict_from`), 위험도(`risk_from`, 이력 상향은 v2), 인용 조항(위반 조항 + 유효한 긴급이면 CHG-07 + 표준이면 STD id)은 코드가 계산한다. LLM은 설명, 조건 목록, 대안 일정 제안만 쓴다. 시간 조항(CHG-01, 05, 06, 10) 위반이 있으면 일정 대안이 필요하고, LLM이 낸 일정을 `check_window`로 다시 검사해 위반이거나 요청 시각 이전이거나 없으면 위반 근거를 알려 1회 재생성, 그래도 안 되면 `next_valid_window`가 찾은 가장 빠른 통과 시간대로 대체한다. 시작 시각이 없으면 확인하지 못한 시간 조항을 코드가 계산해 경고와 설명에 붙이고 판정은 엔진 값 그대로다(자동 승인은 나오지 않는다). 규정 검사를 못 얻었으면 `ReviewIncomplete`(`stage`와 `detail`에 하위 오류 종류와 구조화된 작업 구간을 단다. 평가 하네스가 dev 기록에만 남긴다). 설명은 승인자 화면에 그대로 보이므로 규정 번호와 영어 약어 없이 "~해요"체 두세 문장으로 쓰게 한다(규정 번호는 `citations`로 따로 보인다). 설명 LLM이 실패하면 엔진 근거 문장으로 만든 설명으로 대신한다 |
 | ⑤ validate | 근거 검증 (v2) | 코드: 인용한 rule_id가 존재하고 `violations`에 포함되는지. LLM Judge: 설명이 위반 목록과 모순되지 않는지. 실패 시 ④로 1회 재작성, 두 번째 실패면 `warnings`에 "근거 검증 미완료"를 붙여 진행 |
 | ⑥ approval_gate | 사람 승인 | 표준 변경이고 위반이 없으면 자동 승인. 아니면 `interrupt()`로 멈추고 승인자 결정을 기다린다. 평가 모드에서는 여기서 멈춘 상태의 `recommendation`이 측정 대상 |
 | ⑦ finalize | 확정 | trace_id가 담긴 감사 로그 JSON Lines 기록, 긴급이면 사후 보고 대상 표시 |
@@ -156,7 +156,7 @@ app/
     prompts/               baseline_v0.md, structure_rules.md (구조화 규칙. v0과 v1 parse_request가 공유)
     wire.py                anthropic 구조화 출력용 와이어 스키마 (선택 필드 0개. 도메인 ChangeRequest는 복잡도 한도로 거절된다. v0과 v1 parse_request가 anthropic에서 사용)
     results.py             SubagentResult, RuleNote, AlternativePlan (에이전트 안에서만 쓰는 결과 모델)
-    errors.py              ReviewIncomplete (판정을 만들지 않고 수동 검토로 넘길 때)
+    errors.py              ReviewIncomplete (판정을 만들지 않고 수동 검토로 넘길 때. stage/detail은 진단용이라 dev 기록에만 남긴다)
     nodes/                 parse_request, classify, policy_agent, impact_agent (서브그래프), history_agent, decide, validate, approval, finalize, baseline_v0
   persistence/checkpointer.py
   api/                     main.py(lifespan), routes, deps(역할 확인), middleware(마스킹), sse
