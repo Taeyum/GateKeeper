@@ -5,9 +5,14 @@ ScheduledChange)은 app/schemas.py의 것을 그대로 쓴다. 여기에는 Tool
 모델만 둔다. schemas.py는 2단계와 공유하는 인터페이스라 이번 단계에서 건드리지 않는다.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas import FreezePeriod, KstDatetime, ScheduledChange, Violation
+from app.schemas import FreezePeriod, HistoryItem, KstDatetime, ScheduledChange, Violation
+
+# history.json의 outcome 값. search_history의 필터 인자 타입이다 (HistoryItem.outcome과 같은 값)
+HistoryOutcome = Literal["성공", "장애", "실패 후 롤백"]
 
 
 class ServiceInfo(BaseModel):
@@ -39,6 +44,23 @@ class CalendarResult(BaseModel):
     end: KstDatetime
     freeze_periods: list[FreezePeriod] = Field(description="대상이 범위(scope)에 속하거나 범위가 *인 동결 기간")
     scheduled_changes: list[ScheduledChange] = Field(description="같은 대상에 이미 승인된 변경")
+
+
+class HistoryHit(BaseModel):
+    """search_history의 한 건. item은 history.json 항목의 원래 키 그대로이고 score는 코사인 유사도다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    score: float
+    item: HistoryItem
+
+
+class HistorySearchResult(BaseModel):
+    """search_history 응답. 점수 내림차순이다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hits: list[HistoryHit] = Field(default_factory=list)
 
 
 class WindowCheckResult(BaseModel):

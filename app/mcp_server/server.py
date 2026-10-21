@@ -2,7 +2,7 @@
 
 Resource: 규정 원문 조각 12개 (rules://index, rules://CHG-01~10, rules://standard).
           호출해도 늘 같은 정적 문서이고 URI로 식별된다.
-Tool:     check_policy, check_window, get_service_info, get_calendar, get_incident.
+Tool:     check_policy, check_window, get_service_info, get_calendar, get_incident, search_history.
           입력에 따라 계산하거나 조회하는 동적 행위다.
 
 판정 로직은 여기에 없다. check_policy/check_window는 rules_engine 함수를 감싸기만 하고,
@@ -20,12 +20,22 @@ from fastmcp.exceptions import ToolError
 from app import rules_engine
 from app.data_loader import load_gk_data
 from app.mcp_server import queries
-from app.mcp_server.models import CalendarResult, ServiceInfo, WindowCheckResult
+from app.mcp_server.models import (
+    CalendarResult,
+    HistoryHit,
+    HistoryOutcome,
+    HistorySearchResult,
+    ServiceInfo,
+    WindowCheckResult,
+)
 from app.mcp_server.policy_docs import PolicyDocs, load_policy_docs
+from app.rag import HistoryIndex, IndexNotReady, open_history_index
 from app.schemas import ChangeRequest, ChangeType, GKData, Incident, KstDatetime, PolicyCheckResult
 
 # Tool은 모두 읽기 전용이고 같은 입력에 같은 결과를 돌려준다
 _READ_ONLY = {"readOnlyHint": True, "idempotentHint": True, "destructiveHint": False}
+
+MAX_HISTORY_K = 10
 
 
 def _lookup(fn: Callable[..., Any], *args: Any) -> Any:
@@ -67,10 +77,18 @@ def _register_resources(mcp: FastMCP, policy: PolicyDocs) -> None:
     add("rules://standard", "rules-standard", "표준 변경 목록 (STD-01, STD-02)", policy.standard)
 
 
-def _register_tools(mcp: FastMCP, data: GKData | None) -> None:
+def _register_tools(mcp: FastMCP, data: GKData | None, history_index: HistoryIndex | None) -> None:
     # data가 None이면 규칙 엔진은 gatekeeper_data의 캐시된 값을 쓰고, 조회 Tool도 같은 값을 쓴다.
     def gk() -> GKData:
         return data or load_gk_data()
+
+    # 이력 색인은 search_history를 처음 부를 때 연다. 다른 Tool은 색인이나 Ollama 없이도 동작해야 한다.
+    index_holder: dict[str, HistoryIndex | None] = {"index": history_index}
+
+    def history() -> HistoryIndex:
+        if index_holder["index"] is None:
+            index_holder["index"] = open_history_index()
+        return index_holder["index"]
 
     @mcp.tool(annotations=_READ_ONLY)
     def check_policy(request: ChangeRequest, submitted_at: KstDatetime) -> PolicyCheckResult:
@@ -113,22 +131,51 @@ def _register_tools(mcp: FastMCP, data: GKData | None) -> None:
         """장애 티켓(INC-연도-번호)의 상태(open/closed)와 영향 받는 서비스를 조회한다."""
         return _lookup(queries.incident_info, gk(), ticket)
 
-    # search_history(query, k=3)는 6단계(RAG)에서 추가한다.
+    @mcp.tool(annotations=_READ_ONLY)
+    def search_history(
+        query: str,
+        k: int = 3,
+        service: str | None = None,
+        change_type: ChangeType | None = None,
+        outcome: HistoryOutcome | None = None,
+    ) -> HistorySearchResult:
+        """과거 변경 이력을 의미로 검색해 비슷한 사례 상위 k건(기본 3건)을 점수 순으로 돌려준다.
+
+        기본 호출은 서비스나 유형으로 미리 거르지 않는다. service, change_type, outcome을 주면 그 조건에 맞는
+        이력만을 대상으로 유사도 순 상위 k건을 돌려준다(이력 전체에서 "같은 서비스, 같은 유형, 장애"를 정확히 찾을 때 쓴다).
+        """
+        text = query.strip()
+        if not text:
+            raise ToolError("INVALID_ARGUMENT: query가 비어 있다")
+        if not 1 <= k <= MAX_HISTORY_K:
+            raise ToolError(f"INVALID_ARGUMENT: k는 1 이상 {MAX_HISTORY_K} 이하다")
+        where = {
+            name: value
+            for name, value in (("service", service), ("change_type", change_type), ("outcome", outcome))
+            if value is not None
+        }
+        try:
+            ranked = history().search(text, k, where or None)
+        except IndexNotReady as exc:
+            raise ToolError(f"INDEX_NOT_READY: {exc}") from exc
+        return HistorySearchResult(hits=[HistoryHit(score=r.score, item=r.item) for r in ranked])
 
 
-def build_server(data: GKData | None = None, docs: PolicyDocs | None = None) -> FastMCP:
-    """서버를 만든다. data/docs를 주면 테스트가 가짜 데이터를 넣을 수 있다."""
+def build_server(
+    data: GKData | None = None, docs: PolicyDocs | None = None, history_index: HistoryIndex | None = None
+) -> FastMCP:
+    """서버를 만든다. data/docs/history_index를 주면 테스트가 가짜 데이터와 색인을 넣을 수 있다."""
     mcp = FastMCP(
         "gatekeeper",
         instructions=(
             "인프라 변경요청 검토용 서버. rules:// Resource는 규정 원문이고, "
-            "Tool은 규정 검사와 서비스/일정/장애 티켓 조회를 한다."
+            "Tool은 규정 검사와 서비스/일정/장애 티켓 조회, 과거 이력 검색을 한다."
         ),
         # 예상 못 한 내부 오류의 상세(경로, 스택)는 LLM이 보는 응답에 싣지 않는다. 의도한 ToolError는 그대로 전달된다.
         mask_error_details=True,
     )
     _register_resources(mcp, docs or load_policy_docs())
-    _register_tools(mcp, data)
+    _register_tools(mcp, data, history_index)
     return mcp
 
 

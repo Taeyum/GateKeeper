@@ -6,7 +6,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from app import rules_engine
+from app import data_loader, rules_engine
 from app.agent.mcp_client import (
     MCPClient,
     MCPClientError,
@@ -16,8 +16,9 @@ from app.agent.mcp_client import (
     server_env,
 )
 from app.mcp_server.server import build_server
-from app.schemas import PolicyCheckResult, Violation
+from app.schemas import HistoryItem, PolicyCheckResult, Violation
 from tests._engine import dev_case, requires_engine
+from tests._history import make_index
 
 
 def _server_process_count() -> int:
@@ -107,6 +108,34 @@ async def test_인자_오류는_MCPToolError(mcp):
     t = datetime.fromisoformat("2026-10-30T20:00:00+09:00")
     with pytest.raises(MCPToolError, match="INVALID_ARGUMENT"):
         await mcp.get_calendar("payments-db", t, t)
+
+
+async def test_search_history_타입이_있는_헬퍼와_필터():
+    async with MCPClient(build_server(history_index=make_index()), base_delay=0.01) as client:
+        result = await client.search_history("파트너 임시 허용 결제 승인 지연")
+        assert len(result.hits) == 3 and all(isinstance(hit.item, HistoryItem) for hit in result.hits)
+        assert [hit.score for hit in result.hits] == sorted((hit.score for hit in result.hits), reverse=True)
+
+        # 필터는 서버로 그대로 전달되고, 질의와 무관해도 그 조건의 이력을 찾는다
+        exact = await client.search_history("인증서 갱신 만료 교체", service="payments-db", change_type="firewall", outcome="장애")
+        assert "HIS-049" in [hit.item.history_id for hit in exact.hits]
+        assert all(hit.item.service == "payments-db" and hit.item.outcome == "장애" for hit in exact.hits)
+
+
+async def test_search_history_오류는_MCPToolError이고_재시도하지_않는다(tmp_path, monkeypatch):
+    async with MCPClient(build_server(history_index=make_index()), base_delay=0.01) as client:
+        metrics: dict[str, int] = {}
+        with pytest.raises(MCPToolError, match="INVALID_ARGUMENT"):
+            await client.search_history("x", 0, metrics=metrics)
+        assert metrics == {} and client.total_retries == 0
+
+    monkeypatch.setenv("GK_RAG_DIR", str(tmp_path / "없는_색인"))
+    monkeypatch.setenv("LLM_PROVIDER", "fake")
+    data_loader.clear_caches()
+    async with MCPClient(build_server(), base_delay=0.01) as client:
+        with pytest.raises(MCPToolError, match="INDEX_NOT_READY"):
+            await client.search_history("결제")
+        assert client.total_retries == 0
 
 
 async def test_엔진_배선_check_policy와_check_window(mcp, monkeypatch):

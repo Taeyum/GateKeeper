@@ -12,15 +12,16 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from mcp.shared.exceptions import MCPError
 
-from app import rules_engine
-from app.data_loader import load_gk_data, load_requests
+from app import data_loader, rules_engine
+from app.data_loader import load_gk_data, load_history, load_requests
 from app.mcp_server.server import build_server
 from app.schemas import PolicyCheckResult, Violation
 from tests._engine import dev_case, requires_engine
+from tests._history import make_index, make_item
 
 RULE_URIS = [f"rules://CHG-{i:02d}" for i in range(1, 11)]
 EXPECTED_URIS = {"rules://index", *RULE_URIS, "rules://standard"}
-EXPECTED_TOOLS = {"check_policy", "check_window", "get_service_info", "get_calendar", "get_incident"}
+EXPECTED_TOOLS = {"check_policy", "check_window", "get_service_info", "get_calendar", "get_incident", "search_history"}
 
 
 @pytest.fixture
@@ -76,10 +77,9 @@ async def test_없는_조항은_오류다(client):
 # ---------------------------------------------------------------- Tool 목록과 조회 Tool
 
 
-async def test_Tool은_5개이고_search_history는_아직_없다(client):
-    # 6단계에서 search_history를 추가하면 EXPECTED_TOOLS에 넣고 6개로 바꾼다
+async def test_Tool은_6개다(client):
     tools = await client.list_tools()
-    assert {t.name for t in tools} == EXPECTED_TOOLS
+    assert {t.name for t in tools} == EXPECTED_TOOLS and len(tools) == 6
     assert all(t.description for t in tools)
     assert all(t.annotations.read_only_hint for t in tools)
 
@@ -311,6 +311,78 @@ async def test_캘린더_겹침은_dev_라벨의_CHG_10_CHG_06과_일치한다(c
         else:
             assert has_freeze == ("CHG-10" in violations), case.request_id
         assert bool(result["scheduled_changes"]) == ("CHG-06" in violations), case.request_id
+
+
+# ---------------------------------------------------------------- search_history (6단계)
+
+HIS_KEYS = {"history_id", "date", "service", "change_type", "title", "description", "outcome", "incident", "related_rules"}
+
+
+@pytest.fixture
+async def history_client():
+    """FakeEmbedder와 메모리 저장소로 만든 실제 이력 100건 색인을 꽂은 서버."""
+    async with Client(build_server(history_index=make_index())) as c:
+        yield c
+
+
+async def test_search_history는_상위_3건을_점수_순으로_돌려주고_원래_키를_그대로_담는다(history_client):
+    title = next(h.title for h in load_history() if h.history_id == "HIS-034")
+    hits = (await history_client.call_tool("search_history", {"query": title})).structured_content["hits"]
+    assert len(hits) == 3  # k 기본값
+    assert hits[0]["item"]["history_id"] == "HIS-034" and set(hits[0]["item"]) == HIS_KEYS
+    scores = [h["score"] for h in hits]
+    assert scores == sorted(scores, reverse=True)
+
+
+async def test_기본_호출은_서비스나_유형으로_거르지_않는다():
+    items = [
+        make_item("S-1", "svc-a", "firewall", "장애"),
+        make_item("S-2", "svc-b", "deploy", "성공"),
+        make_item("S-3", "svc-c", "db_change", "실패 후 롤백"),
+    ]
+    async with Client(build_server(history_index=make_index(items))) as client:
+        hits = (await client.call_tool("search_history", {"query": "임시 허용 후 결제 지연", "k": 3})).structured_content["hits"]
+    assert {h["item"]["service"] for h in hits} == {"svc-a", "svc-b", "svc-c"}
+
+
+async def test_필터를_주면_그_조건의_이력만_대상이고_질의와_무관해도_찾는다(history_client):
+    query = "인증서 갱신 만료 교체"
+    unfiltered = (await history_client.call_tool("search_history", {"query": query})).structured_content["hits"]
+    assert "HIS-049" not in [h["item"]["history_id"] for h in unfiltered]  # 의미 검색 상위 3건에는 없다
+    filtered = (
+        await history_client.call_tool(
+            "search_history", {"query": query, "service": "payments-db", "change_type": "firewall", "outcome": "장애"}
+        )
+    ).structured_content["hits"]
+    assert "HIS-049" in [h["item"]["history_id"] for h in filtered]
+    assert all(
+        (h["item"]["service"], h["item"]["change_type"], h["item"]["outcome"]) == ("payments-db", "firewall", "장애")
+        for h in filtered
+    )
+
+
+async def test_조건에_맞는_이력이_없으면_빈_목록이다(history_client):
+    result = await history_client.call_tool(
+        "search_history", {"query": "아무거나", "service": "payments-db", "change_type": "standard", "outcome": "장애"}
+    )
+    assert result.structured_content["hits"] == []
+
+
+@pytest.mark.parametrize("arguments", [{"query": "x", "k": 0}, {"query": "x", "k": 11}, {"query": "   "}])
+async def test_search_history의_잘못된_인자는_INVALID_ARGUMENT다(history_client, arguments):
+    with pytest.raises(ToolError, match="INVALID_ARGUMENT"):
+        await history_client.call_tool("search_history", arguments)
+
+
+async def test_색인이_없으면_INDEX_NOT_READY로_구분한다(tmp_path, monkeypatch):
+    monkeypatch.setenv("GK_RAG_DIR", str(tmp_path / "없는_색인"))
+    monkeypatch.setenv("LLM_PROVIDER", "fake")
+    data_loader.clear_caches()
+    async with Client(build_server()) as client:
+        with pytest.raises(ToolError, match="INDEX_NOT_READY"):
+            await client.call_tool("search_history", {"query": "결제"})
+        # 색인이 없어도 다른 Tool은 그대로 동작한다
+        assert (await client.call_tool("get_service_info", {"service_id": "payments-db"})).structured_content["tier"] == "Tier-1"
 
 
 # ---------------------------------------------------------------- 규칙 엔진 필요 (2단계 머지 후)

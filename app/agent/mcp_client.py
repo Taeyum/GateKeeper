@@ -30,7 +30,7 @@ from mcp.shared.exceptions import MCPError as SDKMCPError
 
 from app.agent.retry import with_retry
 from app.config import PROJECT_ROOT
-from app.mcp_server.models import CalendarResult, ServiceInfo, WindowCheckResult
+from app.mcp_server.models import CalendarResult, HistoryOutcome, HistorySearchResult, ServiceInfo, WindowCheckResult
 from app.schemas import ChangeRequest, ChangeType, Incident, PolicyCheckResult, Violation
 
 T = TypeVar("T")
@@ -254,6 +254,24 @@ class MCPClient:
     async def get_incident(self, ticket: str, *, metrics: dict[str, int] | None = None) -> Incident:
         data = await self.call_tool("get_incident", {"ticket": ticket}, metrics=metrics)
         return Incident.model_validate(data)
+
+    async def search_history(
+        self,
+        query: str,
+        k: int = 3,
+        *,
+        service: str | None = None,
+        change_type: ChangeType | None = None,
+        outcome: HistoryOutcome | None = None,
+        metrics: dict[str, int] | None = None,
+    ) -> HistorySearchResult:
+        """이력 의미 검색. 필터를 주지 않으면 서비스나 유형으로 거르지 않고, 주면 그 조건 안에서만 순위를 매긴다."""
+        arguments: dict[str, Any] = {"query": query, "k": k}
+        for name, value in (("service", service), ("change_type", change_type), ("outcome", outcome)):
+            if value is not None:
+                arguments[name] = value
+        data = await self.call_tool("search_history", arguments, metrics=metrics)
+        return HistorySearchResult.model_validate(data)
 
     # ------------------------------------------------------------ 규정 원문 Resource
 
