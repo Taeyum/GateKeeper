@@ -88,7 +88,8 @@ async def run_until_gate(graph, request_id: str) -> None:
 def test_허용_목록은_GKState의_pydantic_모델을_중첩까지_모두_담는다():
     names = {model.__name__ for model in state_models()}
     # Recommendation 안의 Violation, SubagentResult 안의 RuleNote처럼 필드에 중첩된 모델도 포함한다
-    assert {"ChangeRequest", "Recommendation", "Violation", "SubagentResult", "RuleNote", "ValidationState", "AlternativePlan"} <= names
+    expected = {"ChangeRequest", "Recommendation", "Violation", "SubagentResult", "RuleNote", "ValidationState", "AlternativePlan"}
+    assert expected | {"ApprovalRecord"} <= names  # 승인자의 결정도 체크포인트에 저장된다
     assert ("app.schemas", "ChangeRequest") in state_allowlist()
 
 

@@ -42,6 +42,25 @@ class ValidationState(BaseModel):
     incomplete: bool = False
 
 
+Decision = Literal["approve", "reject"]
+
+# 요청이 끝난 모양. approved/rejected는 승인자의 결정, auto_approved는 표준 변경의 자동 승인,
+# manual_review는 자동 검토를 끝내지 못해 수동으로 넘긴 것이다(API가 기록한다).
+Outcome = Literal["approved", "rejected", "auto_approved", "manual_review"]
+
+
+class ApprovalRecord(BaseModel):
+    """⑥ approval_gate가 interrupt()에서 받는 승인자의 결정 (docs/SPEC.md 2장 `approval`).
+
+    approver와 at은 클라이언트가 보내는 값이 아니다. API가 X-User-Name 헤더와 서버 시각으로 채워 넣는다.
+    """
+
+    decision: Decision
+    approver: str = Field(min_length=1)
+    comment: str = Field(default="", max_length=1000)
+    at: str = Field(min_length=1)
+
+
 class AlternativePlan(BaseModel):
     """decide가 조건부 대안을 문장으로 조립하기 전의 구성 요소 (리뷰 K4).
 

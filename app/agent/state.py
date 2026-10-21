@@ -10,7 +10,7 @@ from typing import Annotated, Any
 
 from typing_extensions import TypedDict
 
-from app.agent.results import AlternativePlan, SubagentResult, ValidationState
+from app.agent.results import AlternativePlan, ApprovalRecord, Outcome, SubagentResult, ValidationState
 from app.schemas import ChangeRequest, Recommendation, Route, StandardId
 
 
@@ -50,6 +50,19 @@ class GKState(TypedDict, total=False):
     alternative: AlternativePlan
     # ⑤ validate 결과 (v2). 실패하면 사유를 들고 decide로 1회 돌아간다.
     validation: ValidationState
+    # ⑥ approval_gate와 ⑦ finalize 결과 (7단계). 평가 하네스의 그래프는 여기까지 오지 않는다.
+    # approval은 승인자가 결정한 뒤에만 있고(자동 승인이면 None), outcome이 요청이 끝난 모양을 말한다.
+    # API가 검토를 끝내지 못한 요청을 manual_review로 표시할 때도 outcome과 message를 상태에 남겨 서버를 다시 띄워도 보이게 한다.
+    approval: ApprovalRecord | None
+    outcome: Outcome
+    decided_at: str
+    message: str
+    # API가 넣는 요청 정보. request_text는 이번에 새로 쓴 본문(마스킹)이고, 재요청이면 masked_text는 부모 본문과 합친 문장이다.
+    # raw_text는 상태에 두지 않는다. 마스킹 미들웨어가 앞에서 가려서 원문이 서버 안으로 들어오지 않는다.
+    parent_request_id: str | None
+    request_text: str
+    # 그래프 루트 실행의 run_id와 같은 값. 감사 로그와 LangSmith trace를 잇는다.
+    trace_id: str
     # 승인자에게 보여 줄 경고. 노드마다 더하고 decide가 Recommendation.warnings로 옮긴다.
     warnings: Annotated[list[str], operator.add]
     errors: Annotated[list[str], operator.add]
