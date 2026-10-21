@@ -1,0 +1,13 @@
+{
+  "unit": "USD per 1M tokens",
+  "note": "값은 직접 채운다. 모델의 input과 output이 모두 숫자여야 예상 비용을 계산한다. 하나라도 null이면 비용은 '-'로 나온다. 로컬 모델(ollama)은 0을 넣으면 0으로 계산한다.",
+  "models": {
+    "qwen3:8b": { "input": null, "output": null },
+    "qwen3:0.6b": { "input": null, "output": null },
+    "claude-sonnet-5-5": { "input": null, "output": null },
+    "claude-haiku-5-5": { "input": null, "output": null },
+    "claude-opus-5-5": { "input": null, "output": null },
+    "gpt-4o": { "input": null, "output": null },
+    "gpt-4o-mini": { "input": null, "output": null }
+  }
+}
