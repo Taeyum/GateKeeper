@@ -24,6 +24,7 @@ import type {
   Violation,
 } from '../src/api/types.ts'
 import evidence from './evidence.json' with { type: 'json' }
+import explanations from './explanations.json' with { type: 'json' }
 import {
   emergencyValid,
   getDevRequest,
@@ -132,7 +133,8 @@ export function scenarioFor(devId: string): Scenario {
     similar_history: expected.similar_history,
     emergency_valid: isEmergency ? emergencyValid(structured.ticket, structured.target) : expected.emergency_valid,
     post_report_required: expected.post_report_required,
-    explanation: expected.rationale,
+    // 정답 라벨의 rationale은 규정 번호가 섞인 문장체라서, 쉬운 말로 쓴 목업 설명을 우선한다.
+    explanation: (explanations as Record<string, string>)[devId] ?? expected.rationale,
     conditional_alternative: expected.conditional_alternative,
     citations: [...violations.map((v) => v.rule_id), ...(isEmergency ? ['CHG-07'] : [])],
     warnings: [],

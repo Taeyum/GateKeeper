@@ -7,19 +7,22 @@ import type { AlternativeDiffItem, Violation } from '@/api/types'
 export type GroupKey = 'time' | 'access' | 'period' | 'rollback' | 'test' | 'notice' | 'etc'
 
 interface GroupSpec {
+  /** 요청자에게 하는 안내 제목 ("~해 주세요") */
   title: string
+  /** 승인자에게 보여 주는 상황 제목 ("~가 ~해요") */
+  problem: string
   /** 이 묶음의 "지금 -> 이렇게" 비교에 쓰는 ChangeRequest 필드 */
   diffFields: string[]
 }
 
 export const GROUPS: Record<GroupKey, GroupSpec> = {
-  time: { title: '작업 시간을 바꿔 주세요', diffFields: ['start', 'end'] },
-  access: { title: '접속할 곳을 정해 주세요', diffFields: ['source'] },
-  period: { title: '열어 둘 기간을 적어 주세요', diffFields: ['expires_days', 'expires_at'] },
-  rollback: { title: '되돌리는 방법을 적어 주세요', diffFields: ['has_rollback'] },
-  test: { title: '테스트 결과를 붙여 주세요', diffFields: ['has_test_evidence'] },
-  notice: { title: '더 일찍 요청해 주세요', diffFields: [] },
-  etc: { title: '그 밖의 확인할 것', diffFields: [] },
+  time: { title: '작업 시간을 바꿔 주세요', problem: '작업 시간이 규정에 맞지 않아요', diffFields: ['start', 'end'] },
+  access: { title: '접속할 곳을 정해 주세요', problem: '접속 범위가 너무 넓어요', diffFields: ['source'] },
+  period: { title: '열어 둘 기간을 적어 주세요', problem: '열어 둘 기간이 없어요', diffFields: ['expires_days', 'expires_at'] },
+  rollback: { title: '되돌리는 방법을 적어 주세요', problem: '되돌리는 방법이 없어요', diffFields: ['has_rollback'] },
+  test: { title: '테스트 결과를 붙여 주세요', problem: '테스트 결과가 없어요', diffFields: ['has_test_evidence'] },
+  notice: { title: '더 일찍 요청해 주세요', problem: '요청이 너무 늦었어요', diffFields: [] },
+  etc: { title: '그 밖의 확인할 것', problem: '그 밖의 확인할 것', diffFields: [] },
 }
 
 /** 화면에 보이는 묶음 순서 */
@@ -50,6 +53,8 @@ export interface FixItem {
 export interface FixGroup {
   key: GroupKey
   title: string
+  /** 승인자 화면용 상황 제목 */
+  problem: string
   items: FixItem[]
   /** 이 묶음에 붙는 "지금 -> 이렇게" 비교. 없으면 비어 있다. */
   diff: AlternativeDiffItem[]
@@ -85,6 +90,7 @@ export function groupViolations(
   const groups: FixGroup[] = GROUP_ORDER.filter((key) => byGroup.has(key)).map((key) => ({
     key,
     title: GROUPS[key].title,
+    problem: GROUPS[key].problem,
     items: byGroup.get(key) ?? [],
     diff: [],
   }))

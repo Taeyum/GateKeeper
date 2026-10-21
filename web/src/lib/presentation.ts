@@ -51,7 +51,7 @@ export const CHANGE_TYPE_LABEL: Record<ChangeType, string> = {
   standard: '표준 변경',
 }
 
-const STANDARD_LABEL: Record<StandardId, string> = {
+export const STANDARD_LABEL: Record<StandardId, string> = {
   'STD-01': '로그 레벨 변경',
   'STD-02': '인증서 갱신',
 }

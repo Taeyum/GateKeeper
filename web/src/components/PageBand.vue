@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Role } from '@/api/types'
 import { homePathFor, session, setRole, USERS } from '@/state/session'
@@ -16,7 +15,6 @@ defineProps<{
 
 const router = useRouter()
 const roles: Role[] = ['requester', 'approver']
-const showDefaultNav = computed(() => session.role === 'requester')
 
 async function switchRole(role: Role) {
   if (role === session.role) return
@@ -34,12 +32,12 @@ async function switchRole(role: Role) {
             <AppIcon name="shield" :size="24" :stroke-width="2" />
             GateKeeper
           </RouterLink>
-          <slot name="nav">
-            <nav v-if="showDefaultNav" class="pills" aria-label="주 메뉴">
-              <RouterLink class="pill" :class="{ on: active === 'compose' }" :aria-current="active === 'compose' ? 'page' : undefined" to="/">요청 작성</RouterLink>
-              <RouterLink class="pill" :class="{ on: active === 'mine' }" :aria-current="active === 'mine' ? 'page' : undefined" :to="{ path: '/', hash: '#my-requests' }">내 요청</RouterLink>
-            </nav>
-          </slot>
+          <!-- 승인자는 화면이 넘긴 탭(nav 슬롯)을, 요청자는 요청 메뉴를 보여 준다. 역할이 맞지 않는 화면에서도 메뉴가 어긋나지 않는다. -->
+          <slot v-if="session.role === 'approver'" name="nav" />
+          <nav v-else class="pills" aria-label="주 메뉴">
+            <RouterLink class="pill" :class="{ on: active === 'compose' }" :aria-current="active === 'compose' ? 'page' : undefined" to="/">요청 작성</RouterLink>
+            <RouterLink class="pill" :class="{ on: active === 'mine' }" :aria-current="active === 'mine' ? 'page' : undefined" :to="{ path: '/', hash: '#my-requests' }">내 요청</RouterLink>
+          </nav>
         </div>
         <div class="roles" role="group" aria-label="역할 전환 (데모)">
           <button

@@ -20,7 +20,7 @@ describe('규정 문구 매핑 표', () => {
 
   it('쉬운 문구에는 가운뎃점이 없고 규정 번호도 들어 있지 않다', () => {
     for (const copy of Object.values(RULE_COPY)) {
-      expect(copy.plain).not.toContain('·')
+      expect(copy.plain).not.toContain(String.fromCharCode(0xb7))
       expect(copy.plain).not.toMatch(/CHG-\d+/)
     }
   })
@@ -32,7 +32,10 @@ describe('규정 문구 매핑 표', () => {
 
   it('모든 묶음은 제목을 가지고 보이는 순서에 들어 있다', () => {
     expect(GROUP_ORDER).toHaveLength(Object.keys(GROUPS).length)
-    for (const key of GROUP_ORDER) expect(GROUPS[key].title.length).toBeGreaterThan(0)
+    for (const key of GROUP_ORDER) {
+      expect(GROUPS[key].title.length).toBeGreaterThan(0)
+      expect(GROUPS[key].problem.length).toBeGreaterThan(0)
+    }
   })
 })
 
@@ -48,6 +51,8 @@ describe('위반 묶기', () => {
       ['접속할 곳을 정해 주세요', ['CHG-02', 'CHG-03']],
       ['열어 둘 기간을 적어 주세요', ['CHG-09']],
     ])
+    // 승인자 화면은 같은 묶음을 상황 제목으로 보여 준다
+    expect(groups.map((g) => g.problem)).toEqual(['작업 시간이 규정에 맞지 않아요', '접속 범위가 너무 넓어요', '열어 둘 기간이 없어요'])
   })
 
   it('쉬운 문구와 엔진 문장을 둘 다 가진다', () => {

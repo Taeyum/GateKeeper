@@ -156,6 +156,17 @@ describe('검토 실행과 이벤트', () => {
     expect(detail.recommendation?.verdict).toBe('반려')
   })
 
+  it('시스템 설명은 규정 번호 없이 쉬운 말이다', async () => {
+    const server = newServer()
+    const id = await submit(server, D01_TEXT)
+    const explanation = server.getDetail(id).recommendation?.explanation ?? ''
+    expect(explanation).toBe('접속할 곳과 기간을 정하지 않은 채, 금요일 밤 정산 기간에 결제 DB를 외부에 열려는 요청이에요.')
+    for (const item of server.listRequests(approver)) {
+      const text = server.getDetail(item.request_id).recommendation?.explanation ?? ''
+      expect(text, item.request_id).not.toMatch(/CHG-\d+|FRZ-\d+|0\.0\.0\.0/)
+    }
+  })
+
   it('비밀값은 마스킹한 본문으로 저장한다', async () => {
     const server = newServer()
     const id = await submit(server, `${D01_TEXT} password=hunter2`)
