@@ -8,10 +8,13 @@ from app import data_loader, rules_engine
 from app.agent.errors import ReviewIncomplete
 from app.agent.nodes import decide as node
 from app.agent.nodes.decide import (
+    EXPIRY_TOKEN,
     DecideDraft,
     assemble_alternative,
     build_citations,
+    expiry_text,
     fallback_explanation,
+    fill_expiry,
     incomplete_detail,
     missing_start_sentence,
     render_decide_input,
@@ -22,7 +25,7 @@ from app.agent.nodes.decide import (
 )
 from app.agent.prompting import load_prompt
 from app.agent.results import AlternativePlan, RuleNote, SubagentResult
-from app.data_loader import load_requests, load_rules
+from app.data_loader import load_cmdb, load_requests, load_rules
 from app.rules_engine.context import effective_change_type
 from app.llm.fake import set_fake_responses
 from app.llm.usage import UsageCollector
@@ -353,6 +356,120 @@ async def test_대안_구성_요소가_상태에_남는다():
     start, end = valid_window()
     out, _ = await run(state_for("REQ-D01"), [draft(start=start, end=end, conditions=["  출발지를 특정한다  ", " "])])
     assert out["alternative"] == AlternativePlan(start=start, end=end, conditions=["출발지를 특정한다"], fallback=False)
+
+
+# ---------------------------------------------------------------------------
+# 조건 문장의 구체 값 (v1 대안 구체성)
+# 1차 anthropic 측정에서 Judge가 "일반론에 그쳐 구체성이 부족"하다고 한 조건 문장을 구체 값으로 쓰게 한다.
+# ---------------------------------------------------------------------------
+
+
+def rules_with_max_days(days: int):
+    rules = load_rules().model_copy(deep=True)
+    rules.get_rule("CHG-09").params["max_days"] = days
+    return rules
+
+
+def render_for(request_id: str, verdict: str, effective_type: str) -> str:
+    state = state_for(request_id)
+    check = PolicyCheckResult.model_validate(state["policy"].tool_output)
+    return render_decide_input(
+        request=state["structured"], submitted_at=state["submitted_at"], effective_type=effective_type, verdict=verdict,
+        risk="높음", check=check, standard_id=None, emergency_is_valid=None, policy=state["policy"], impact=state["impact"],
+        time_violation_ids=[], needs_schedule=False,
+    )  # fmt: skip
+
+
+def test_조건은_구체적인_값과_예시로_쓰게_하고_일반론과_지어내기를_막는다():
+    text = load_prompt("decide.md")
+    line = next(row for row in text.splitlines() if row.startswith("- conditions:"))
+    assert "구체적인 값과 예시를 함께 쓰고" in line and '"구체적으로 적어 달라" 같은 일반론으로 끝내지 않는다' in line
+    assert "지어내지 않는다" in line and '간결한 평서문("~한다")' in line
+    for hint in ("출발지가 문제면", "허용 기한이 문제면", "롤백 계획이 문제면", "테스트 증적이 문제면"):
+        assert hint in text, hint
+    assert f'"{EXPIRY_TOKEN}"이라고 그대로 쓴다' in text and "날짜를 직접 계산하지 않는다" in text
+    # 이 파일은 .format(policy, calendar)을 거치므로 다른 중괄호가 있으면 프롬프트를 만들 때 깨진다
+    assert "{" not in text.replace("{policy}", "").replace("{calendar}", "")
+
+
+def test_조건에_쓸_값은_코드가_데이터에서_읽어_입력에_넣는다():
+    request = request_of("REQ-D01")
+    text = render_for("REQ-D01", "반려", "firewall")
+    assert "## 조건에 쓸 값" in text and f"- 변경 사유: {request.reason or '적혀 있지 않음'}" in text
+    for partner in load_cmdb().partners:
+        assert f"{partner.partner} {partner.ip} ({partner.purpose})" in text
+    max_days = load_rules().get_rule("CHG-09").params["max_days"]
+    assert f"허용 기한은 최대 {max_days}일이다" in text and f'"{EXPIRY_TOKEN}"이라고 그대로 쓴다' in text
+
+
+def test_허용_기한의_최대_일수는_rules_json을_따르고_프롬프트에_데이터_값을_쓰지_않는다(monkeypatch):
+    monkeypatch.setattr(node, "load_rules", lambda: rules_with_max_days(14))
+    assert "허용 기한은 최대 14일이다" in render_for("REQ-D01", "반려", "firewall")
+    prompt = load_prompt("decide.md").split("# 출력")[1]
+    max_days = load_rules().get_rule("CHG-09").params["max_days"]
+    assert f"{max_days}일" not in prompt  # 규정 값은 입력으로 받는다 (CLAUDE.md 절대 규칙 3)
+    assert not any(partner.ip in prompt or partner.partner in prompt for partner in load_cmdb().partners)
+
+
+def test_방화벽이_아니면_파트너와_허용_기한을_주지_않고_승인에는_섹션이_없다():
+    db = render_for("REQ-D03", "조건부 승인", "db_change")
+    assert "## 조건에 쓸 값" in db and "등록된 파트너" not in db and "허용 기한" not in db
+    assert "## 조건에 쓸 값" not in render_for("REQ-D06", "승인", "deploy")
+
+
+def test_만료_날짜는_작업일에_최대_일수를_더해_코드가_계산한다():
+    base = datetime(2026, 10, 27, 14, tzinfo=KST)
+    assert expiry_text(base, rules_with_max_days(30)) == "11/26(목)"
+    assert expiry_text(base, rules_with_max_days(14)) == "11/10(화)"
+    assert expiry_text(datetime(2026, 12, 20, 9, tzinfo=KST), rules_with_max_days(30)) == "1/19(화)"  # 해를 넘긴다
+    assert expiry_text(None, rules_with_max_days(30)) == "작업일로부터 30일째 되는 날"  # 작업일을 모르면 날짜를 지어내지 않는다
+
+
+def test_토큰이_없으면_규정을_읽지_않고_그대로_돌려준다():
+    texts = ["롤백 절차를 제출한다"]
+    assert fill_expiry(texts, None, None) is texts  # rules=None이라 읽으려 하면 실패한다
+    assert fill_expiry([f"{EXPIRY_TOKEN}까지, {EXPIRY_TOKEN}"], None, rules_with_max_days(7)) == [
+        "작업일로부터 7일째 되는 날까지, 작업일로부터 7일째 되는 날"
+    ]
+
+
+async def test_만료_날짜는_검증을_통과한_대안_작업일에서_센다():
+    start, end = valid_window()
+    condition = f"허용 기한을 최대 30일로 줄여 {EXPIRY_TOKEN}까지로 지정한다"
+    out, _ = await run(state_for("REQ-D01"), [draft(start=start, end=end, conditions=[condition])])
+    expected = expiry_text(start, load_rules())
+    assert out["alternative"].conditions == [f"허용 기한을 최대 30일로 줄여 {expected}까지로 지정한다"]
+    assert expected != expiry_text(request_of("REQ-D01").start, load_rules())  # 원래 작업일 기준이 아니다
+    assert EXPIRY_TOKEN not in out["recommendation"].conditional_alternative
+
+
+async def test_일정이_엔진_대체로_바뀌어도_만료_날짜는_대체된_작업일에서_센다():
+    condition = f"허용 기한을 최대 30일로 줄여 {EXPIRY_TOKEN}까지로 지정한다"
+    out, _ = await run(state_for("REQ-D01"), [draft(conditions=[condition]), draft(conditions=[condition])])
+    plan = out["alternative"]
+    assert plan.fallback is True
+    assert plan.conditions == [f"허용 기한을 최대 30일로 줄여 {expiry_text(plan.start, load_rules())}까지로 지정한다"]
+
+
+async def test_일정을_옮기지_않는_조건부_승인은_요청의_작업일에서_센다():
+    request = request_of("REQ-D09")  # CHG-09만 위반: 작업 시각은 그대로
+    condition = f"허용 기한을 최대 30일로 줄여 {EXPIRY_TOKEN}까지로 지정한다"
+    out, _ = await run(state_for("REQ-D09"), [draft(conditions=[condition])])
+    assert out["alternative"].start is None
+    assert out["alternative"].conditions == [f"허용 기한을 최대 30일로 줄여 {expiry_text(request.start, load_rules())}까지로 지정한다"]
+    assert out["alternative"].conditions[0].endswith("까지로 지정한다") and "<" not in out["alternative"].conditions[0]
+
+
+async def test_작업일을_모르면_날짜를_지어내지_않고_말로_쓴다():
+    request = request_of("REQ-D09", start=None, end=None)
+    condition = f"허용 기한을 최대 30일로 줄여 {EXPIRY_TOKEN}까지로 지정한다"
+    out, _ = await run(state_for("REQ-D09", request), [draft(conditions=[condition])])
+    assert out["alternative"].conditions == ["허용 기한을 최대 30일로 줄여 작업일로부터 30일째 되는 날까지로 지정한다"]
+
+
+async def test_설명에_토큰이_새도_화면에_날것으로_나가지_않는다():
+    out, _ = await run(state_for("REQ-D09"), [draft(explanation=f"기한은 {EXPIRY_TOKEN}까지로 줄여야 해요.", conditions=["기한을 줄인다"])])
+    assert EXPIRY_TOKEN not in out["recommendation"].explanation and "기한은 11/26(목)까지로 줄여야 해요." == out["recommendation"].explanation
 
 
 def test_대안_문장_조립():
