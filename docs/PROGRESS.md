@@ -8,7 +8,7 @@
 | 2 | 규칙 엔진과 단위 테스트 (클라우드) | 완료 (PR #1 머지 45bced2. 머지본 `pytest -q` 347 통과, skip 0, dev 10건 라벨 일치 10/10) | 5건 (90e4951, 1ca7896, 2d57cd2, f738b8d, 3a6fb76) |
 | 3 | MCP 서버 (Resource, Tool) (로컬, 2단계와 동시) | 완료 (실제 엔진과 합쳐 `pytest -q` 354 통과, skip 0) | 7건 (d2f2041 ~ 7141c8d) + 후속 fix 1건 (3aa1050, H2) |
 | 4 | v0 기준선과 평가 하네스 | 완료 (4단계 커밋 시점 `pytest -q` 484 통과, v0 dev 평가 1회 기록. 리뷰 J2 후속 반영 후 497 통과, Anthropic live 7건 통과) | 12건 (48157c4 ~ 45bec30, push 완료) + J2 후속 (분할은 `docs/reports/stage4.md`) |
-| 5 | v1 (구조화, 라우팅, 병렬 서브에이전트, 판정) | 대기 | |
+| 5 | v1 (구조화, 라우팅, 병렬 서브에이전트, 판정) | **진행 중**. v1 그래프 조립까지 끝났고 v1 dev 첫 측정은 판정 정확도 40%(4/10)로 v0의 50%보다 낮다(오류 2건: REQ-D01, REQ-D07이 ReviewIncomplete). 원인은 엔진이 아니라 parse_request 입력이라 N1~N3 반영 뒤 재측정한다. 남은 일: N1 ReviewIncomplete 사유를 dev jsonl에 남기고 원인 수정, N2 parse_request 프롬프트에 변경 유형 정의 주입, N3 STD-01의 extra_changes 빈 목록 처리, K5 explanation을 규정 번호 없는 쉬운 한국어로(decide 프롬프트). 첫 측정 결과는 `results/20261021-173455_v1_dev.summary.json`에 남기고 "1차, 수정, 2차"로 비교한다. 상세는 `docs/handoff/feedback.md` | 첫 측정과 문서 갱신 4건 (4eef2ba ~ 2727dc8) |
 | 6 | v2 (RAG, Validator) | 대기 | |
 | 7 | HITL과 API (체크포인터, SSE, 역할 확인, 마스킹) | 대기 | |
 | 8 | 화면 (요청자, 승인자) | 대기 | |
