@@ -54,6 +54,9 @@ class RequestRecord:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     task: asyncio.Task | None = None
     recommendation_sent: bool = False
+    # 서버를 다시 띄워 체크포인터에서 복구한 요청은 그 뒤에 이벤트가 쌓여도 중간부터만 있다. 그런 기록은 다시 보내지 않고
+    # 종료 이벤트 하나만 보낸다(계약: 재시작 뒤에는 체크포인터 상태로 종료 이벤트 하나).
+    replayable: bool = True
 
 
 class RequestStore:
@@ -110,6 +113,7 @@ async def rehydrate(store: RequestStore, graph: Any, saver: Any, audit: AuditLog
             status=status,
             message=values.get("message"),
             recommendation_sent=values.get("recommendation") is not None,
+            replayable=False,
         )
         if status == "reviewing":
             await graph.aupdate_state(

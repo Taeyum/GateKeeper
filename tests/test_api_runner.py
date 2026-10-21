@@ -307,6 +307,7 @@ async def test_재시작하면_체크포인터에서_승인_대기와_자동_승
         assert (restored.status, restored.requester, restored.own_text) == ("awaiting_approval", waiting.requester, waiting.own_text)
         assert second.store.get("REQ-0002").status == "auto_approved"
         assert restored.nodes == {} and restored.log.events == []  # 진행 기록과 이벤트는 복구하지 않는다
+        assert restored.replayable is False and waiting.replayable is True  # 복구한 요청은 종료 이벤트 하나만 보낸다
         assert second.store.new_id() == "REQ-0003"  # 번호는 이어서 매긴다
 
         values = (await second.graph.aget_state(thread_config("REQ-0001"))).values

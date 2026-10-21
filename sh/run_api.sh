@@ -11,7 +11,7 @@
 # 않으므로 명령줄에서 준 환경 변수가 .env보다 우선한다.
 # 과금 provider는 확인 프롬프트를 거친다. 건너뛰려면 GK_YES=1.
 #
-# API는 7단계에서 만든다(app/api/main.py). 그 전에는 안내만 하고 종료한다.
+# v2는 시작할 때 이력 색인과 임베딩이 준비됐는지 확인하고, 안 됐으면 서버를 띄우지 않는다(bash sh/build_index.sh).
 # 종료하려면 이 터미널에서 Ctrl+C.
 #
 set -euo pipefail
@@ -23,11 +23,6 @@ cd "$(dirname "$0")/.."
 [ -x ".venv/Scripts/python.exe" ] && export PATH="$PWD/.venv/Scripts:$PATH"
 
 PORT="${GK_API_PORT:-8100}"
-
-if [ ! -f app/api/main.py ]; then
-    echo "app/api/main.py가 아직 없습니다. API는 7단계(HITL과 API)에서 구현합니다."
-    exit 1
-fi
 
 # ── 0) 설정 읽기 (키 값은 읽지 않고 설정 여부만 확인) ───────────────────
 read -r PROVIDER MAIN_MODEL SMALL_MODEL OLLAMA_URL HAS_KEY < <(python - <<'PY'
@@ -107,4 +102,5 @@ cat <<EOF
  종료하려면 Ctrl+C
 EOF
 
-python -m uvicorn app.api.main:app --host 127.0.0.1 --port "$PORT"
+# 앱을 import할 때가 아니라 서버가 뜰 때 설정을 읽도록 팩토리로 실행한다.
+python -m uvicorn app.api.main:create_app --factory --host 127.0.0.1 --port "$PORT"
