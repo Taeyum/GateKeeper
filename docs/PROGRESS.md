@@ -7,7 +7,7 @@
 | 1 | 저장소 파악과 기반 구조 (설정, LLM 팩토리, 스키마, 로더, 규칙 엔진 시그니처) | 완료 (pytest 77 통과, ollama live 1건 통과) | 8건 (분할 목록은 `docs/reports/stage1.md`) |
 | 2 | 규칙 엔진과 단위 테스트 (클라우드) | 완료 (PR #1 머지 45bced2. 머지본 `pytest -q` 347 통과, skip 0, dev 10건 라벨 일치 10/10) | 5건 (90e4951, 1ca7896, 2d57cd2, f738b8d, 3a6fb76) |
 | 3 | MCP 서버 (Resource, Tool) (로컬, 2단계와 동시) | 완료 (실제 엔진과 합쳐 `pytest -q` 354 통과, skip 0) | 7건 (d2f2041 ~ 7141c8d) + 후속 fix 1건 (3aa1050, H2) |
-| 4 | v0 기준선과 평가 하네스 | 완료 (`pytest -q` 484 통과, 기본 실행에서 빠지는 live 6건 중 v0 live 1건 통과, v0 dev 평가 1회 기록) | 커밋 12건 제안 (분할 목록은 `docs/reports/stage4.md`, 아직 커밋 전) |
+| 4 | v0 기준선과 평가 하네스 | 완료 (4단계 커밋 시점 `pytest -q` 484 통과, v0 dev 평가 1회 기록. 리뷰 J2 후속 반영 후 497 통과, Anthropic live 7건 통과) | 12건 (48157c4 ~ 45bec30, push 완료) + J2 후속 (분할은 `docs/reports/stage4.md`) |
 | 5 | v1 (구조화, 라우팅, 병렬 서브에이전트, 판정) | 대기 | |
 | 6 | v2 (RAG, Validator) | 대기 | |
 | 7 | HITL과 API (체크포인터, SSE, 역할 확인, 마스킹) | 대기 | |
@@ -90,6 +90,7 @@
 - (4단계) 결과 파일: `results/<날짜시각>_<버전>_<split>.jsonl`(요청별, git 제외)과 `.summary.json`(집계, 커밋), `report.md`와 `charts/<split>_*.png`. report는 split마다 같은 provider의 버전별 최신 summary를 쓰고, 모델, 요청 수, 반복 횟수, 추적 여부, 데이터 해시가 버전마다 다르면 경고한다(커밋 차이는 단계마다 당연해서 경고하지 않는다). p95는 nearest-rank라 n=10이면 최댓값이다.
 - (4단계) v0 첫 측정에서 본 약점(프롬프트는 손대지 않음): 7건이 존재하지 않는 CHG-06 충돌을 주장했고(정답에 CHG-06이 있는 dev 요청은 없다), CHG-01을 건 6건 중 정답인 REQ-D01을 뺀 5건이 오탐이다(예: 금요일 16~17시를 금지 시간대와 겹친다고 판단). "다음 주 화요일"을 10-25로 풀었고(정답 11-03) 종료 시각을 시작과 같게 뒀다. 설명에 "자동 승인"이라 쓰고 판정은 "승인"을 냈고, 표준 변경 REQ-D10은 동결(CHG-10)을 놓쳐 승인했다. 입력 조립(요일 표기, 규정/데이터 포함)은 테스트로 고정되어 있어 하네스 문제가 아니라 단독 LLM(qwen3:8b)의 실제 오류다. EVAL.md 6장 기준으로 v0 판정 정확도가 90%를 넘지 않아 "v0이 너무 잘 맞는" 경우는 아니다.
 - (4단계) 의존성: `langgraph` 1.2.16, `matplotlib` 3.11.2을 추가했고 `langsmith`(0.14.11)는 직접 의존으로 명시했다. 설치하며 `websockets`가 17.3에서 16.1.1로 내려갔고 `uv pip check`와 기존 테스트 354건은 그대로 통과했다.
+- (4단계 후속, 리뷰 J2) Anthropic 구조화 출력(`output_config.format`)은 공유 도메인 스키마를 그대로 받지 못한다. 실측(claude-sonnet-5-5, claude-haiku-5-5): `V0Output`(선택 필드 25, union 18)과 `ChangeRequest` 단독(선택 16, union 14)은 400 "Schema is too complex"(request_id req_011CgEzwhLSAsUjRftm2dZQj, req_011CgF1QTPnuqAXe6aiqYiCU)로 거절되고, `Recommendation` 단독(9, 4)과 `JudgeScore`(정수 범위 `ge=1, le=5` 포함, 0, 0)는 통과한다. 공식 한도는 요청 전체 기준 선택 필드 24개, union 필드 16개인데 `ChangeRequest` 단독은 그 안인데도 거절되므로 한도 숫자만으로는 판단할 수 없다(공식 문서: 선택 필드는 문법 상태 공간을 키우고 내부 컴파일 한도가 따로 있다). 선택 필드가 0개인 스키마만 통과했다. 그래서 공유 스키마는 바꾸지 않고 anthropic에서만 쓰는 와이어 모델 `app/agent/wire.py`(`WireChangeRequest`, `WireRecommendation`, `V0Wire`)를 두었다. 모든 필드를 필수로 두고, null과 빈 값이 같은 뜻인 `source`, `ticket`, `reason`, `extra_changes`, `conditional_alternative`는 빈 문자열/빈 목록으로 받아 코드에서 None으로 바꾸며, v0이 낼 수 없는 `similar_history`는 뺀다(nullable은 12개). 잃는 것은 `extra_changes`의 `[]`와 null 구분 하나뿐이고 평가 필드 15개에 없다. ollama 경로는 도메인 모델 그대로라 기록한 v0 측정이 유효하다. Anthropic live(`pytest -m llm -k anthropic`) 7건 통과: v0(Sonnet 5.5)이 REQ-D01에서 정답 위반 5개를 정확히 맞혔고(입력 14,541 토큰, 출력 2,197 토큰 중 reasoning 858), Judge(Opus 5.5)가 정수 범위 스키마로 5점을 냈다. 같은 요청의 입력 토큰이 qwen3:8b(7,240)의 약 2배라 Anthropic 토크나이저 기준으로 비용을 따로 계산해야 한다.
 
 ## 남은 이슈
 
@@ -98,9 +99,9 @@
 - 서버 stderr에는 의도한 `ToolError`(NOT_FOUND 등)도 ERROR 로그로 찍힌다. 동작에는 영향이 없고 로그만 시끄럽다.
 - Tool 개수 5개를 고정한 테스트(`test_mcp.py`)는 6단계에서 `search_history`를 추가할 때 6개로 바꾼다.
 - `next_valid_window`, `risk_from`, `is_standard`는 MCP Tool이 아니다(SPEC 5장은 Tool 5개). 5단계 decide가 엔진을 직접 호출할지 MCP로 부를지는 5단계에서 정한다.
-- anthropic/openai의 구조화 출력은 키가 없어 확인하지 못했다. `.env`에 키를 넣고 `pytest -m llm -s`로 확인한다. openai는 `json_schema` strict 요건(모든 필드 required)과 `ChangeRequest`의 기본값 필드가 맞는지도 이때 본다. 4단계에서 구조화 스키마가 둘 더 생겼다: `V0Output`(`ChangeRequest`와 `Recommendation`을 한 번에 내는 중첩 스키마)와 `JudgeScore`(`score`에 `ge=1, le=5`). Anthropic 네이티브 구조화 출력이 정수 범위 제약(`minimum`/`maximum`)과 중첩 `$defs`를 받는지는 키가 생기면 이 둘로 먼저 본다(ollama qwen3:8b는 둘 다 통과). 9단계 전에 확인한다.
+- anthropic 구조화 출력은 확인했다(J2). openai는 기존 프로브 2건(작은 스키마)만 통과했고 `V0Output`/`JudgeScore`처럼 중첩 또는 선택 필드가 있는 스키마는 `json_schema` strict 요건(모든 필드 required)과 맞는지 확인하지 않았다. 예비 provider라 쓰게 될 때 `pytest -m llm`에 openai 항목을 추가해 본다.
 - J1 (리뷰, 5단계 첫 커밋): "판정과 자기 위반 목록의 모순" 지표를 추가한다. pred 위반 목록의 구분(rules.json의 금지/보완)으로 규정 1장 판정을 다시 계산해 pred 판정과 다른 실행의 비율이다(표준 변경 여부는 pred 판정이 "자동 승인"인지로 봄, `rules_engine` 대신 rules.json만 읽는다). v0 dev 10건 중 5건(REQ-D02, D03, D06, D07, D08)이 금지 조항을 위반으로 적고도 "조건부 승인"을 냈다. 기존 v0 측정은 LLM을 다시 부르지 않고 저장된 jsonl로 다시 채점해 summary와 report에 반영한다. 커밋 `feat(eval): 판정과 위반 목록의 자기모순 지표`.
-- J2 (리뷰, 필수, 키가 생기는 대로): Anthropic 구조화 출력 확인. `V0Output`의 중첩 `$defs`와 `JudgeScore`의 정수 범위 제약이 네이티브 구조화 출력에서 받아들여지는지 `LLM_PROVIDER=anthropic pytest -q -m llm`(v0 1건, Judge 1건 포함)으로 본다. 안 되는 제약은 스키마에서 빼고 코드 검증으로 옮긴다. 5단계 v1도 같은 방식을 쓴다.
+- 5단계 필수: v1 parse_request는 anthropic에서 도메인 `ChangeRequest`가 아니라 `app/agent/wire.py`의 `WireChangeRequest`로 구조화하고 `.to_domain()`으로 되돌린다(위 J2 결정). `ChangeRequest`에 필드를 더하면 와이어와 `tests/test_wire.py`의 필드 일치 테스트가 알려 준다. decide가 `Recommendation` 전체를 LLM에게 받는다면 단독 스키마는 통과했으니 그대로 쓸 수 있다.
 - 4단계에서 정리됨: ollama dev 평가의 Judge는 main과 같은 qwen3:8b(비독립)이고 summary와 리포트에 그렇게 표시한다. 독립 Judge(opus)는 9단계 anthropic 평가에서만 쓴다.
 - anthropic은 thinking/effort를 API 기본값으로 둬서 지연과 토큰에 thinking이 섞인다. 4단계에서 측정은 reasoning 토큰을 출력 토큰에서 따로 집계해(`reasoning_tokens`) 리포트에 드러내는 것으로 정리했다. 실제 anthropic 값은 9단계에서 처음 본다.
 - replay 실험 업로드(로컬 점수를 LangSmith 실험으로 올리기)는 이번 단계에서 하지 않았다(리뷰 I4). 9단계에 시간이 남으면 추가한다. 지금은 측정 중 추적(프로젝트 `gk-<버전>-<split>-<시각>`)만 있다.

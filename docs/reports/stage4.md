@@ -93,9 +93,9 @@ v0 프롬프트에는 규정 원문 전체, CMDB, 변경 캘린더, 장애 티�
 - 이 측정은 커밋 전 작업 트리에서 했다. summary의 git 해시는 기준점 `c5fd852`이고 dirty 표시가 있다.
 - 대안 품질은 Judge가 시스템과 같은 모델이라 비독립이다. 추세용이고 9단계의 독립 Judge(opus)와 직접 비교하지 않는다.
 - 설치하며 `websockets`가 17.3에서 16.1.1로 내려갔다(langgraph 요건). `uv pip check`와 기존 354건은 그대로 통과했다.
-- anthropic/openai로는 아직 한 번도 돌려 보지 않았다. 새 구조화 스키마 둘(`V0Output`의 중첩 `$defs`, `JudgeScore`의 정수 범위 제약)이 Anthropic 네이티브 구조화 출력에서 받아들여지는지는 키가 생기면 9단계 전에 확인한다.
+- anthropic은 4단계 push 뒤 J2로 확인했다(아래 "후속: 리뷰 J2"). openai는 기존 프로브 2건만 통과했고 `V0Output` 같은 스키마는 확인하지 않았다(예비 provider).
 - 계획과 달라진 점은 `docs/plans/stage4.md` 끝에 있다.
-- 결과 리뷰(J1, J2): J1(판정과 자기 위반 목록의 모순 지표)은 5단계 첫 커밋으로 넣는다. J2(Anthropic 구조화 출력 확인)는 키가 생기는 대로 하고 결과는 별도 커밋에 남긴다.
+- 결과 리뷰(J1, J2): J1(판정과 자기 위반 목록의 모순 지표)은 5단계 첫 커밋으로 넣는다. J2(Anthropic 구조화 출력 확인)는 키가 생겨서 바로 했고 결과는 아래 "후속: 리뷰 J2"에 있다.
 
 ## 변경 파일
 
@@ -125,3 +125,43 @@ git 제외: `results/*.jsonl`(요청별 결과)
 | 12 | `docs: 4단계 계획과 보고, 진행 기록` | `docs/plans/stage4.md`, `docs/reports/stage4.md`, `docs/PROGRESS.md`, `docs/EVAL.md`, `docs/SPEC.md`, `docs/handoff/feedback.md` | 484 통과 |
 
 커밋 해시는 이 파일 자신이 12번 커밋에 들어가므로 여기에 적을 수 없다. `git log --oneline`으로 확인한다. 커밋과 push는 요청이 있을 때 한다.
+
+## 후속: 리뷰 J2 (Anthropic 구조화 출력 확인)
+
+키가 있어서 4단계 커밋과 push(`c5fd852..45bec30`) 직후 `pytest -m llm -k anthropic`을 돌렸다. v0 1건과 Judge 1건을 포함한다.
+
+**발견**: 공유 스키마를 그대로 보내면 Anthropic이 400 "Schema is too complex"로 거절한다.
+
+| 스키마 | 선택 필드 / union 필드 | Anthropic |
+|---|---|---|
+| `V0Output` (v0이 한 번에 내는 결과) | 25 / 18 | 거절 |
+| `ChangeRequest` 단독 (v1 parse_request가 쓸 스키마) | 16 / 14 | **거절** |
+| `Recommendation` 단독 | 9 / 4 | 통과 |
+| `JudgeScore` (정수 `ge=1, le=5` 포함) | 0 / 0 | 통과 |
+| `WireChangeRequest` 단독, `V0Wire` (아래 와이어) | 0 / 10, 0 / 12 | 통과 |
+
+공식 한도는 요청 전체 기준 선택 필드 24개, union 필드 16개인데 `ChangeRequest` 단독은 그 안인데도 거절된다. 한도 숫자만으로는 판단할 수 없고, 선택 필드가 문법 상태 공간을 키우는 내부 컴파일 복잡도가 따로 있다. 4단계 계획의 가정("정수 범위 제약이 문제일 수 있다")과 달리 실제 원인은 스키마 복잡도였고, 정수 범위 제약은 문제가 없었다.
+
+**조치**: 공유 스키마(`app/schemas.py`)는 바꾸지 않고 anthropic에서만 쓰는 와이어 모델 `app/agent/wire.py`를 만들었다.
+- 모든 필드를 필수로 둔다(선택 필드 0개).
+- null과 빈 값이 같은 뜻인 필드(`source`, `ticket`, `reason`, `extra_changes`, `conditional_alternative`)는 빈 문자열/빈 목록으로 받아 코드에서 None으로 바꾼다.
+- v0이 낼 수 없는 `similar_history`는 뺀다.
+- 잃는 것은 `extra_changes`의 `[]`와 null 구분 하나뿐이다(평가 필드 15개에 없고 v0은 쓰지 않는다).
+- ollama 경로는 도메인 모델 그대로라 기록한 v0 dev 측정이 유효하다.
+
+**5단계 영향 (중요)**: v1 parse_request는 anthropic에서 도메인 `ChangeRequest`가 아니라 `WireChangeRequest`로 구조화하고 `.to_domain()`으로 되돌려야 한다. 9단계에서 처음 깨졌다면 고칠 시간이 없었던 문제다.
+
+**Anthropic live 결과** (`pytest -m llm -k anthropic`, 7건 통과)
+- v0 (claude-sonnet-5-5), REQ-D01: 판정 반려, 위반 CHG-01/02/03/09/10으로 정답 5개와 정확히 같다. 입력 14,541 토큰, 출력 2,197 토큰(그중 reasoning 858). 같은 요청의 입력 토큰이 qwen3:8b(7,240)의 약 2배라 Anthropic 토크나이저 기준으로 비용을 따로 계산한다. reasoning 토큰은 수집기가 출력 토큰에서 따로 잡는 것을 확인했다.
+- Judge (claude-opus-5-5): 5점, 근거 문장이 정답 대안과 일치한다.
+- 프로브(main, small)와 와이어/`Recommendation` 스키마 수락 3건 통과.
+
+**테스트**: `pytest -q` 497 통과(4단계 시점 484 + 와이어 13), live는 provider별로 v0, Judge, 스키마 수락을 추가했다(`tests/test_llm_live.py`).
+
+**커밋 (4단계 push 이후)**
+
+| # | 메시지 | 파일 |
+|---|---|---|
+| 13 | `fix(agent): Anthropic 구조화 출력 복잡도 한도에 맞춘 와이어 스키마` | `app/agent/wire.py`, `app/agent/nodes/baseline_v0.py`, `tests/test_wire.py` |
+| 14 | `test(llm): anthropic live 테스트 (v0, Judge, 스키마 수락)` | `tests/test_llm_live.py` |
+| 15 | `docs: J2 결과(Anthropic 구조화 출력 스키마 한도)를 진행 기록에 반영` | `docs/PROGRESS.md`, `docs/reports/stage4.md` |

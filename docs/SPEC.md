@@ -152,6 +152,7 @@ app/
     graph.py               GK_VERSION에 따라 그래프 조립
     prompting.py           프롬프트 파일 로드와 해시, 정적 컨텍스트 렌더링 (v0과 Judge가 공유)
     prompts/               baseline_v0.md, structure_rules.md (구조화 규칙. v0과 v1 parse_request가 공유)
+    wire.py                anthropic 구조화 출력용 와이어 스키마 (선택 필드 0개. 도메인 ChangeRequest는 복잡도 한도로 거절된다. v0과 v1 parse_request가 anthropic에서 사용)
     nodes/                 parse, classify, policy_agent, impact_agent, history_agent, decide, validate, approval, finalize, baseline_v0
   persistence/checkpointer.py
   api/                     main.py(lifespan), routes, deps(역할 확인), middleware(마스킹), sse
