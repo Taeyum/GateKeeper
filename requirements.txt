@@ -1,0 +1,14 @@
+# GateKeeper 의존성 (하한 버전). 1단계에서 쓰는 것만 둔다.
+# 이후 단계에서 해당 단계 패키지(fastmcp, langgraph, fastapi 등)를 추가한다.
+pydantic>=2.7
+pydantic-settings>=2.4
+python-dotenv>=1.0
+
+# LLM (provider별 LangChain 통합)
+langchain-core>=1.6.10
+langchain-anthropic>=1.7
+langchain-ollama>=1.0
+langchain-openai>=1.0
+
+# 테스트
+pytest>=8.0
