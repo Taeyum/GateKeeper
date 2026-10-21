@@ -11,6 +11,10 @@ import pytest
 from app import data_loader
 from app.agent.graph import build_graph
 from app.agent.nodes import baseline_v0
+from app.agent.nodes.classify import RouteGuess
+from app.agent.nodes.decide import DecideDraft
+from app.agent.nodes.impact_agent import ImpactNote
+from app.agent.nodes.policy_agent import PolicyNotes
 from app.agent.nodes.baseline_v0 import V0Output, output_schema, to_output
 from app.agent.wire import V0Wire, WireChangeRequest, WireRecommendation
 from app.data_loader import load_requests
@@ -55,6 +59,14 @@ def test_와이어_스키마는_선택_필드가_없고_union도_한도_안이�
     assert optional == 0 and union == 12 and union <= MAX_UNION
     # v1 parse_request가 anthropic에서 쓸 단독 스키마
     assert complexity(WireChangeRequest.model_json_schema()) == (0, 10)
+
+
+@pytest.mark.parametrize(
+    ("schema", "unions"), [(RouteGuess, 0), (PolicyNotes, 0), (ImpactNote, 0), (DecideDraft, 2)]
+)
+def test_v1_노드의_LLM_출력_스키마는_선택_필드가_없다(schema, unions):
+    """anthropic 구조화 출력은 선택 필드가 문법 상태 공간을 키운다. v1 스키마는 처음부터 필수 필드만 둔다 (선택 0)."""
+    assert complexity(schema.model_json_schema()) == (0, unions)  # DecideDraft의 union 2개는 nullable 시각 둘
 
 
 def test_도메인_ChangeRequest는_공식_한도_안이지만_실제로는_거절된_스키마다():

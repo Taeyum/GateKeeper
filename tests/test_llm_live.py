@@ -123,15 +123,31 @@ async def test_Judge가_정수_범위_제약이_있는_스키마로_점수를_�
     assert collector.snapshot().llm_calls >= 1
 
 
-@pytest.mark.parametrize("schema_name", ["WireChangeRequest", "Recommendation", "V0Wire"])
-def test_anthropic이_직접_보내는_스키마를_받아들인다(schema_name):
-    """anthropic으로 직접 보내는 스키마가 실제 API에서 400 'Schema is too complex' 없이 통과해야 한다 (리뷰 J2).
-    도메인 ChangeRequest는 공식 한도 안인데도 거절돼서(app/agent/wire.py) 와이어 모델을 보낸다."""
+def _anthropic_schemas() -> dict:
+    from app.agent.nodes.classify import RouteGuess
+    from app.agent.nodes.decide import DecideDraft
+    from app.agent.nodes.impact_agent import ImpactNote
+    from app.agent.nodes.policy_agent import PolicyNotes
     from app.agent.wire import V0Wire, WireChangeRequest
-    from app.llm.factory import get_llm, structured_llm
     from app.schemas import Recommendation
 
-    schema = {"WireChangeRequest": WireChangeRequest, "Recommendation": Recommendation, "V0Wire": V0Wire}[schema_name]
+    return {
+        "WireChangeRequest": WireChangeRequest, "Recommendation": Recommendation, "V0Wire": V0Wire,
+        "RouteGuess": RouteGuess, "PolicyNotes": PolicyNotes, "ImpactNote": ImpactNote, "DecideDraft": DecideDraft,
+    }  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "schema_name",
+    ["WireChangeRequest", "Recommendation", "V0Wire", "RouteGuess", "PolicyNotes", "ImpactNote", "DecideDraft"],
+)
+def test_anthropic이_직접_보내는_스키마를_받아들인다(schema_name):
+    """anthropic으로 직접 보내는 스키마가 실제 API에서 400 'Schema is too complex' 없이 통과해야 한다 (리뷰 J2).
+    도메인 ChangeRequest는 공식 한도 안인데도 거절돼서(app/agent/wire.py) 와이어 모델을 보낸다.
+    v1 노드의 스키마(RouteGuess, PolicyNotes, ImpactNote, DecideDraft)는 처음부터 선택 필드 없이 만들었다."""
+    from app.llm.factory import get_llm, structured_llm
+
+    schema = _anthropic_schemas()[schema_name]
     settings = _live_settings("anthropic")
     chain = structured_llm(get_llm("small", settings), schema, settings)  # 스키마 수락 여부만 보므로 싼 모델
     request = (
@@ -141,3 +157,55 @@ def test_anthropic이_직접_보내는_스키마를_받아들인다(schema_name)
     result = chain.invoke(request)
     print(f"\n[anthropic/{settings.model_for('small')}] {schema_name} -> {type(result).__name__}")
     assert isinstance(result, schema)
+
+
+@pytest.mark.parametrize("provider", ["ollama", "anthropic"])
+async def test_v1이_dev_요청_1건을_실제_LLM과_MCP_서버로_끝까지_돈다(monkeypatch, provider):
+    """parse_request(분류는 small 모델), policy_agent와 impact_agent 서브그래프(실제 stdio MCP 서버), decide까지.
+
+    LLM이 구조화를 틀리면 판정이 달라질 수 있어 정확도는 단정하지 않고(dev 평가가 잰다), 그래프가 끝까지 돌고
+    상태가 채워지며 판정이 자기 위반 목록과 모순되지 않는지만 본다. anthropic은 v1 스키마 전체(와이어 포함)가
+    실제 API에서 수락되는지 확인하는 용도이기도 하다.
+    """
+    from langsmith import tracing_context
+
+    from app import data_loader
+    from app.agent.graph import build_graph
+    from app.agent.mcp_client import MCPClient
+    from app.data_loader import load_requests, load_rules
+    from app.llm.usage import UsageCollector
+    from app.masking import mask_secrets
+    from eval.evaluators import policy_rule_ids, self_contradiction
+
+    settings = _live_settings(provider)
+    if provider == "ollama" and settings.model_for("small") not in _ollama_models(settings.ollama_base_url):
+        pytest.skip(f"Ollama에 작은 모델 {settings.model_for('small')}이 없다 (ollama pull {settings.model_for('small')})")
+    monkeypatch.setenv("LLM_PROVIDER", provider)
+    monkeypatch.setenv("GK_VERSION", "v1")
+    data_loader.clear_caches()
+
+    # REQ-D08: DB 변경, 보완 조항 두 개(CHG-05 시간 조항 포함)라 정책 설명, 영향도, 대안 일정 검증을 모두 탄다.
+    # 상대 날짜와 종료 시각 표현이 단순해 작은 모델도 구조화를 안정적으로 한다 (REQ-D01은 qwen3:8b가 종료를 시작과 같게 낸다).
+    item = next(r for r in load_requests("dev") if r.request_id == "REQ-D08")
+    state = {
+        "request_id": item.request_id,
+        "submitted_at": item.submitted_at.isoformat(),
+        "requester": item.requester,
+        "masked_text": mask_secrets(item.text),
+    }
+    collector = UsageCollector()
+    async with MCPClient() as mcp:
+        with tracing_context(enabled=False):
+            result = await build_graph("v1", mcp=mcp).ainvoke(state, config={"callbacks": [collector]})
+    usage, rec = collector.snapshot(), result["recommendation"]
+    print(f"\n[{provider}/{settings.model_for('main')}+{settings.model_for('small')}] route={result['route']} "
+          f"verdict={rec.verdict} violations={[v.rule_id for v in rec.violations]} llm_calls={usage.llm_calls} "
+          f"input_tokens={usage.input_tokens} output_tokens={usage.output_tokens} metrics={result['metrics']} "
+          f"errors={result.get('errors')} warnings={rec.warnings}")  # fmt: skip
+    assert result["policy"].status == "ok" and result["structured"].target
+    assert usage.llm_calls >= 3  # parse, classify, decide (정책 설명과 영향도 요약이 더해진다)
+    violation_ids = sorted(v.rule_id for v in rec.violations)
+    assert self_contradiction(rec.verdict, violation_ids, load_rules()) is False
+    assert set(rec.citations) <= policy_rule_ids()
+    if provider == "ollama":
+        assert usage.max_input_tokens < settings.ollama_num_ctx - 1024  # 잘리지 않았다
