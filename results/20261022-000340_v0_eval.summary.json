@@ -1,0 +1,209 @@
+{
+  "meta": {
+    "version": "v0",
+    "split": "eval",
+    "provider": "ollama",
+    "reps": 1,
+    "n_requests": 20,
+    "started_at": "2026-10-22T00:03:40.849649+09:00",
+    "finished_at": "2026-10-22T00:08:08.848886+09:00",
+    "git": {
+      "commit": "f8abcf0d8142f1a3b9ad553422308410ec273bc3",
+      "dirty": false
+    },
+    "models": {
+      "configured": {
+        "main": "qwen3:4b",
+        "small": "qwen3:0.6b",
+        "judge": "qwen3:4b"
+      },
+      "observed": [
+        "qwen3:4b"
+      ],
+      "judge_observed": []
+    },
+    "prompt_sha256": {
+      "baseline_v0.md": "8a30f39ea5ec75333a58a2466047aa6ae4e0dc99f9bfea7655334bff03687ca2",
+      "structure_rules.md": "22e1a06445468e41a3ce88869f3b40eeca6ee8ecaf90e9a03e2efc620bee12d2",
+      "judge_prompt.md": "d39fc0be8b48427f3d40b82f9531e2b24b3b33e17efb3735749f7d46e3b4e315"
+    },
+    "data_sha256": {
+      "change_policy.md": "9122a52876dd385c169579218d787b8517b4c80220f07fa9a366caf5372c62c4",
+      "rules.json": "b4b2d164d8d611578bb33c9b40c5d69b0689f962425680ca6adf939403ce23c0",
+      "cmdb.json": "772ddda760d4b010b3bcb5fa64ce63df62904348ead05c052ad553bdbddaa399",
+      "change_calendar.json": "98ecda69c18998ed25ffa3dad05a94798f8ba9b5e6f0aae548743ac5dd9b7c55",
+      "open_incidents.json": "8b3dbb38ff30b968e2ba2e0c2424c852c3dce7dda61b2fe1e14e714425396103",
+      "history.json": "96969707ed44185169f65bd68c2f2fed82d01fa645cb8875d6c7e25d32a7d27b",
+      "requests_eval.json": "31409131f07897c4d8a1d05da83a0bf211a4f58fa23d0335f7fb87e4f7b448aa"
+    },
+    "packages": {
+      "langchain-core": "1.6.12",
+      "langchain-ollama": "1.1.0",
+      "langchain-anthropic": "1.7.6",
+      "langgraph": "1.2.16",
+      "langsmith": "0.14.11",
+      "pydantic": "2.14.1"
+    },
+    "ollama_num_ctx": 10240,
+    "ollama_num_parallel": null,
+    "timeout_s": 600.0,
+    "warmup": "first_request",
+    "warmup_error": null,
+    "langsmith": {
+      "enabled": false,
+      "project": null
+    },
+    "judge": {
+      "enabled": false,
+      "model": "qwen3:4b",
+      "independent": false
+    }
+  },
+  "metrics": {
+    "n_requests": 20,
+    "reps": 1,
+    "n_runs": 20,
+    "n_errors": 0,
+    "verdict_accuracy": 0.35,
+    "violation_tp": 4,
+    "violation_fp": 2,
+    "violation_fn": 15,
+    "violation_precision": 0.6666666666666666,
+    "violation_recall": 0.21052631578947367,
+    "violation_f1": 0.32,
+    "structured_accuracy": 0.8859315589353612,
+    "structured_by_field": {
+      "target": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "change_type": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "start": {
+        "correct": 9,
+        "total": 20,
+        "accuracy": 0.45
+      },
+      "end": {
+        "correct": 9,
+        "total": 20,
+        "accuracy": 0.45
+      },
+      "time_precision": {
+        "correct": 17,
+        "total": 20,
+        "accuracy": 0.85
+      },
+      "source": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "port": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "expires_days": {
+        "correct": 19,
+        "total": 20,
+        "accuracy": 0.95
+      },
+      "expires_at": {
+        "correct": 17,
+        "total": 20,
+        "accuracy": 0.85
+      },
+      "has_rollback": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "has_test_evidence": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "is_emergency": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "ticket": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "restart_required": {
+        "correct": 1,
+        "total": 2,
+        "accuracy": 0.5
+      },
+      "cert_expires_at": {
+        "correct": 1,
+        "total": 1,
+        "accuracy": 1.0
+      }
+    },
+    "hallucinated_count": 0,
+    "miscited_count": 2,
+    "miscited_strict_count": 6,
+    "risk_accuracy": 0.2222222222222222,
+    "risk_n": 18,
+    "emergency_accuracy": 0.5,
+    "emergency_n": 2,
+    "self_contradiction_rate": 0.15,
+    "self_contradiction_count": 3,
+    "self_contradiction_n": 20,
+    "rag_recall_at_3": null,
+    "consistency": null,
+    "alternative_score": null,
+    "alternative_n": 0
+  },
+  "latency": {
+    "n": 20,
+    "mean_s": 10.296197334999851,
+    "p95_s": 15.554667400003382,
+    "max_s": 19.74513350000052
+  },
+  "usage": {
+    "llm_calls_total": 20,
+    "llm_calls_per_run": 1.0,
+    "llm_errors": 0,
+    "input_tokens_total": 144965,
+    "output_tokens_total": 8361,
+    "reasoning_tokens_total": 0,
+    "input_tokens_per_run": 7248.25,
+    "output_tokens_per_run": 418.05,
+    "tokens_per_run": 7666.3,
+    "by_model": {
+      "qwen3:4b": {
+        "calls": 20,
+        "input_tokens": 144965,
+        "output_tokens": 8361,
+        "reasoning_tokens": 0
+      }
+    }
+  },
+  "cost": {
+    "unit": "USD per 1M tokens",
+    "total_usd": 0.0,
+    "per_run_usd": 0.0
+  },
+  "judge_usage": {
+    "llm_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "errors": 0
+  },
+  "counters": {
+    "parse_retries": 0
+  },
+  "flags": {
+    "possible_truncation_runs": 0
+  }
+}

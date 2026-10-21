@@ -1,0 +1,232 @@
+{
+  "meta": {
+    "version": "v2",
+    "split": "eval",
+    "provider": "anthropic",
+    "reps": 3,
+    "n_requests": 20,
+    "started_at": "2026-10-21T23:40:23.113283+09:00",
+    "finished_at": "2026-10-22T00:03:37.097619+09:00",
+    "git": {
+      "commit": "f8abcf0d8142f1a3b9ad553422308410ec273bc3",
+      "dirty": false
+    },
+    "models": {
+      "configured": {
+        "main": "claude-sonnet-5-5",
+        "small": "claude-haiku-5-5",
+        "judge": "claude-opus-5-5"
+      },
+      "observed": [
+        "claude-haiku-5-5",
+        "claude-sonnet-5-5"
+      ],
+      "judge_observed": [
+        "claude-opus-5-5"
+      ]
+    },
+    "prompt_sha256": {
+      "parse_request.md": "346914bbe75ca67f31524d5db7e9ca7d985ec5ff6972bd0ae2730843d718aa7b",
+      "structure_rules.md": "22e1a06445468e41a3ce88869f3b40eeca6ee8ecaf90e9a03e2efc620bee12d2",
+      "classify.md": "6bff0215e722c4fadbfd8cebfc4269eca1bb6aac2715a28c68a271f1bce9ed9d",
+      "policy_agent.md": "1ace4a03a92d9fa3debcc53f05c46cab70a7ef40a287099837276fa6feb3744a",
+      "impact_agent.md": "b34e3ecac3ff741a57ada42bc3c61ea0db49bf1fdef6ef7780240bf403a2b954",
+      "history_agent.md": "098e92acf16dd6dd38c8b211c0f383b541eb44c545b818efc37acc67e206ce6c",
+      "decide.md": "ad67d5b1a897cfda9bb3d6d1a35865d56c9c8c88aa8100a685ed6b162e1fed26",
+      "decide_history.md": "2c3abb941cf4a5c01399015a47fb0aa59c41a615fde74c1c0e41cdf186741d13",
+      "validate.md": "0219bf005b7c842ed4ddba129f84ca728df7cc6193b38b64dc7019b1eeaca022",
+      "judge_prompt.md": "d39fc0be8b48427f3d40b82f9531e2b24b3b33e17efb3735749f7d46e3b4e315"
+    },
+    "data_sha256": {
+      "change_policy.md": "9122a52876dd385c169579218d787b8517b4c80220f07fa9a366caf5372c62c4",
+      "rules.json": "b4b2d164d8d611578bb33c9b40c5d69b0689f962425680ca6adf939403ce23c0",
+      "cmdb.json": "772ddda760d4b010b3bcb5fa64ce63df62904348ead05c052ad553bdbddaa399",
+      "change_calendar.json": "98ecda69c18998ed25ffa3dad05a94798f8ba9b5e6f0aae548743ac5dd9b7c55",
+      "open_incidents.json": "8b3dbb38ff30b968e2ba2e0c2424c852c3dce7dda61b2fe1e14e714425396103",
+      "history.json": "96969707ed44185169f65bd68c2f2fed82d01fa645cb8875d6c7e25d32a7d27b",
+      "requests_eval.json": "31409131f07897c4d8a1d05da83a0bf211a4f58fa23d0335f7fb87e4f7b448aa"
+    },
+    "packages": {
+      "langchain-core": "1.6.12",
+      "langchain-ollama": "1.1.0",
+      "langchain-anthropic": "1.7.6",
+      "langgraph": "1.2.16",
+      "langsmith": "0.14.11",
+      "pydantic": "2.14.1"
+    },
+    "ollama_num_ctx": null,
+    "ollama_num_parallel": null,
+    "timeout_s": 600.0,
+    "warmup": "first_request",
+    "warmup_error": null,
+    "langsmith": {
+      "enabled": true,
+      "project": "gk-v2-eval-20261021-234023"
+    },
+    "judge": {
+      "enabled": true,
+      "model": "claude-opus-5-5",
+      "independent": true
+    }
+  },
+  "metrics": {
+    "n_requests": 20,
+    "reps": 3,
+    "n_runs": 60,
+    "n_errors": 0,
+    "verdict_accuracy": 1.0,
+    "violation_tp": 57,
+    "violation_fp": 3,
+    "violation_fn": 0,
+    "violation_precision": 0.95,
+    "violation_recall": 1.0,
+    "violation_f1": 0.9743589743589743,
+    "structured_accuracy": 0.9949302915082383,
+    "structured_by_field": {
+      "target": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "change_type": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "start": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "end": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "time_precision": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "source": {
+        "correct": 59,
+        "total": 60,
+        "accuracy": 0.9833333333333333
+      },
+      "port": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "expires_days": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "expires_at": {
+        "correct": 57,
+        "total": 60,
+        "accuracy": 0.95
+      },
+      "has_rollback": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "has_test_evidence": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "is_emergency": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "ticket": {
+        "correct": 60,
+        "total": 60,
+        "accuracy": 1.0
+      },
+      "restart_required": {
+        "correct": 6,
+        "total": 6,
+        "accuracy": 1.0
+      },
+      "cert_expires_at": {
+        "correct": 3,
+        "total": 3,
+        "accuracy": 1.0
+      }
+    },
+    "hallucinated_count": 0,
+    "miscited_count": 3,
+    "miscited_strict_count": 12,
+    "risk_accuracy": 1.0,
+    "risk_n": 54,
+    "emergency_accuracy": 1.0,
+    "emergency_n": 6,
+    "self_contradiction_rate": 0.0,
+    "self_contradiction_count": 0,
+    "self_contradiction_n": 60,
+    "rag_recall_at_3": 1.0,
+    "consistency": 1.0,
+    "alternative_score": 4.589743589743589,
+    "alternative_n": 39
+  },
+  "latency": {
+    "n": 60,
+    "mean_s": 18.566064566666622,
+    "p95_s": 25.84292049999931,
+    "max_s": 29.50137209999957
+  },
+  "usage": {
+    "llm_calls_total": 403,
+    "llm_calls_per_run": 6.716666666666667,
+    "llm_errors": 0,
+    "input_tokens_total": 1504247,
+    "output_tokens_total": 118583,
+    "reasoning_tokens_total": 45915,
+    "input_tokens_per_run": 25070.783333333333,
+    "output_tokens_per_run": 1976.3833333333334,
+    "tokens_per_run": 27047.166666666668,
+    "by_model": {
+      "claude-sonnet-5-5": {
+        "calls": 343,
+        "input_tokens": 1443851,
+        "output_tokens": 117308,
+        "reasoning_tokens": 45915
+      },
+      "claude-haiku-5-5": {
+        "calls": 60,
+        "input_tokens": 60396,
+        "output_tokens": 1275,
+        "reasoning_tokens": 0
+      }
+    }
+  },
+  "cost": {
+    "unit": "USD per 1M tokens",
+    "total_usd": 4.0674591,
+    "per_run_usd": 0.067790985
+  },
+  "judge_usage": {
+    "llm_calls": 39,
+    "input_tokens": 341125,
+    "output_tokens": 19025,
+    "errors": 0
+  },
+  "counters": {
+    "parse_retries": 0,
+    "required_field_retries": 0,
+    "route_disagreements": 0,
+    "decide_retries": 0,
+    "alternative_regenerations": 0,
+    "alternative_fallbacks": 0,
+    "validator_rewrites": 8,
+    "validator_incomplete": 1
+  },
+  "flags": {
+    "possible_truncation_runs": 0
+  }
+}

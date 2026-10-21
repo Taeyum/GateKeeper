@@ -1,0 +1,225 @@
+{
+  "meta": {
+    "version": "v1",
+    "split": "eval",
+    "provider": "ollama",
+    "reps": 1,
+    "n_requests": 20,
+    "started_at": "2026-10-22T00:08:13.514028+09:00",
+    "finished_at": "2026-10-22T00:30:06.889292+09:00",
+    "git": {
+      "commit": "f8abcf0d8142f1a3b9ad553422308410ec273bc3",
+      "dirty": false
+    },
+    "models": {
+      "configured": {
+        "main": "qwen3:4b",
+        "small": "qwen3:0.6b",
+        "judge": "qwen3:4b"
+      },
+      "observed": [
+        "qwen3:0.6b",
+        "qwen3:4b"
+      ],
+      "judge_observed": []
+    },
+    "prompt_sha256": {
+      "parse_request.md": "346914bbe75ca67f31524d5db7e9ca7d985ec5ff6972bd0ae2730843d718aa7b",
+      "structure_rules.md": "22e1a06445468e41a3ce88869f3b40eeca6ee8ecaf90e9a03e2efc620bee12d2",
+      "classify.md": "6bff0215e722c4fadbfd8cebfc4269eca1bb6aac2715a28c68a271f1bce9ed9d",
+      "policy_agent.md": "1ace4a03a92d9fa3debcc53f05c46cab70a7ef40a287099837276fa6feb3744a",
+      "impact_agent.md": "b34e3ecac3ff741a57ada42bc3c61ea0db49bf1fdef6ef7780240bf403a2b954",
+      "decide.md": "ad67d5b1a897cfda9bb3d6d1a35865d56c9c8c88aa8100a685ed6b162e1fed26",
+      "judge_prompt.md": "d39fc0be8b48427f3d40b82f9531e2b24b3b33e17efb3735749f7d46e3b4e315"
+    },
+    "data_sha256": {
+      "change_policy.md": "9122a52876dd385c169579218d787b8517b4c80220f07fa9a366caf5372c62c4",
+      "rules.json": "b4b2d164d8d611578bb33c9b40c5d69b0689f962425680ca6adf939403ce23c0",
+      "cmdb.json": "772ddda760d4b010b3bcb5fa64ce63df62904348ead05c052ad553bdbddaa399",
+      "change_calendar.json": "98ecda69c18998ed25ffa3dad05a94798f8ba9b5e6f0aae548743ac5dd9b7c55",
+      "open_incidents.json": "8b3dbb38ff30b968e2ba2e0c2424c852c3dce7dda61b2fe1e14e714425396103",
+      "history.json": "96969707ed44185169f65bd68c2f2fed82d01fa645cb8875d6c7e25d32a7d27b",
+      "requests_eval.json": "31409131f07897c4d8a1d05da83a0bf211a4f58fa23d0335f7fb87e4f7b448aa"
+    },
+    "packages": {
+      "langchain-core": "1.6.12",
+      "langchain-ollama": "1.1.0",
+      "langchain-anthropic": "1.7.6",
+      "langgraph": "1.2.16",
+      "langsmith": "0.14.11",
+      "pydantic": "2.14.1"
+    },
+    "ollama_num_ctx": 10240,
+    "ollama_num_parallel": null,
+    "timeout_s": 600.0,
+    "warmup": "first_request",
+    "warmup_error": null,
+    "langsmith": {
+      "enabled": false,
+      "project": null
+    },
+    "judge": {
+      "enabled": false,
+      "model": "qwen3:4b",
+      "independent": false
+    }
+  },
+  "metrics": {
+    "n_requests": 20,
+    "reps": 1,
+    "n_runs": 20,
+    "n_errors": 0,
+    "verdict_accuracy": 0.75,
+    "violation_tp": 13,
+    "violation_fp": 7,
+    "violation_fn": 6,
+    "violation_precision": 0.65,
+    "violation_recall": 0.6842105263157895,
+    "violation_f1": 0.6666666666666667,
+    "structured_accuracy": 0.8365019011406845,
+    "structured_by_field": {
+      "target": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "change_type": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "start": {
+        "correct": 6,
+        "total": 20,
+        "accuracy": 0.3
+      },
+      "end": {
+        "correct": 6,
+        "total": 20,
+        "accuracy": 0.3
+      },
+      "time_precision": {
+        "correct": 16,
+        "total": 20,
+        "accuracy": 0.8
+      },
+      "source": {
+        "correct": 19,
+        "total": 20,
+        "accuracy": 0.95
+      },
+      "port": {
+        "correct": 19,
+        "total": 20,
+        "accuracy": 0.95
+      },
+      "expires_days": {
+        "correct": 19,
+        "total": 20,
+        "accuracy": 0.95
+      },
+      "expires_at": {
+        "correct": 19,
+        "total": 20,
+        "accuracy": 0.95
+      },
+      "has_rollback": {
+        "correct": 17,
+        "total": 20,
+        "accuracy": 0.85
+      },
+      "has_test_evidence": {
+        "correct": 17,
+        "total": 20,
+        "accuracy": 0.85
+      },
+      "is_emergency": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "ticket": {
+        "correct": 20,
+        "total": 20,
+        "accuracy": 1.0
+      },
+      "restart_required": {
+        "correct": 1,
+        "total": 2,
+        "accuracy": 0.5
+      },
+      "cert_expires_at": {
+        "correct": 1,
+        "total": 1,
+        "accuracy": 1.0
+      }
+    },
+    "hallucinated_count": 0,
+    "miscited_count": 7,
+    "miscited_strict_count": 9,
+    "risk_accuracy": 0.8888888888888888,
+    "risk_n": 18,
+    "emergency_accuracy": 1.0,
+    "emergency_n": 2,
+    "self_contradiction_rate": 0.0,
+    "self_contradiction_count": 0,
+    "self_contradiction_n": 20,
+    "rag_recall_at_3": null,
+    "consistency": null,
+    "alternative_score": null,
+    "alternative_n": 0
+  },
+  "latency": {
+    "n": 20,
+    "mean_s": 62.297183360000055,
+    "p95_s": 81.00354850000076,
+    "max_s": 90.99563699999999
+  },
+  "usage": {
+    "llm_calls_total": 101,
+    "llm_calls_per_run": 5.05,
+    "llm_errors": 0,
+    "input_tokens_total": 219756,
+    "output_tokens_total": 14442,
+    "reasoning_tokens_total": 0,
+    "input_tokens_per_run": 10987.8,
+    "output_tokens_per_run": 722.1,
+    "tokens_per_run": 11709.9,
+    "by_model": {
+      "qwen3:4b": {
+        "calls": 81,
+        "input_tokens": 213138,
+        "output_tokens": 14117,
+        "reasoning_tokens": 0
+      },
+      "qwen3:0.6b": {
+        "calls": 20,
+        "input_tokens": 6618,
+        "output_tokens": 325,
+        "reasoning_tokens": 0
+      }
+    }
+  },
+  "cost": {
+    "unit": "USD per 1M tokens",
+    "total_usd": 0.0,
+    "per_run_usd": 0.0
+  },
+  "judge_usage": {
+    "llm_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "errors": 0
+  },
+  "counters": {
+    "parse_retries": 0,
+    "required_field_retries": 2,
+    "route_disagreements": 3,
+    "decide_retries": 0,
+    "alternative_regenerations": 7,
+    "alternative_fallbacks": 7
+  },
+  "flags": {
+    "possible_truncation_runs": 0
+  }
+}
