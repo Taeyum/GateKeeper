@@ -2,6 +2,8 @@ import { fileURLToPath, URL } from 'node:url'
 import vue from '@vitejs/plugin-vue'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
+// Vite가 설정 파일을 네이티브로 읽을 수 있게 설정 파일이 끌어오는 목업 모듈은 확장자를 붙여 가져온다.
+import { mockApi } from './mock/plugin.ts'
 
 // 개발 서버 설정.
 // - 실제 API: /api를 백엔드로 프록시한다. 포트는 sh/run_api.sh의 GK_API_PORT(기본 8100)와 같다.
@@ -12,7 +14,12 @@ export default defineConfig(({ mode }) => {
   const useMock = env.VITE_API_MOCK === '1'
 
   return {
-    plugins: [vue()],
+    plugins: [
+      vue(),
+      ...(useMock
+        ? [mockApi({ drop: env.VITE_MOCK_DROP === '1', speed: env.VITE_MOCK_SPEED ? Number(env.VITE_MOCK_SPEED) : 1 })]
+        : []),
+    ],
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
     },

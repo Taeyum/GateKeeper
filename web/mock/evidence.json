@@ -1,0 +1,27 @@
+{
+  "_comment": "규칙 엔진(app/rules_engine.check_all)을 dev 요청 10건의 expected.structured로 한 번 실행해 얻은 실제 근거 문장이다. 목업의 Recommendation.violations에 그대로 쓴다. 위반이 없는 요청(D02, D04, D06, D07)은 비워 둔다.",
+  "REQ-D01": [
+    { "rule_id": "CHG-01", "severity": "forbidden", "evidence": "작업 구간(10/30(금) 20:00~21:00)이 금요일 18:00~월요일 09:00 배포 금지 시간대와 겹친다." },
+    { "rule_id": "CHG-02", "severity": "forbidden", "evidence": "출발지가 적혀 있지 않아 0.0.0.0/0으로 보며 방화벽 전체 대역 오픈 금지에 걸린다." },
+    { "rule_id": "CHG-03", "severity": "forbidden", "evidence": "DB 포트(5432, CMDB 기본 포트)를 등록 파트너 /32가 아닌 외부 출발지(0.0.0.0/0)에 열려고 한다." },
+    { "rule_id": "CHG-09", "severity": "fixable", "evidence": "외부 출발지(0.0.0.0/0) 허용인데 허용 기한이 없다." },
+    { "rule_id": "CHG-10", "severity": "forbidden", "evidence": "작업 구간(10/30(금) 20:00~21:00)이 동결 기간(FRZ-01 10월 월말 정산 동결, 10/30(금) 00:00~11/2(월) 09:00)과 겹치고 대상(payments-db)이 그 동결 범위에 속한다." }
+  ],
+  "REQ-D03": [
+    { "rule_id": "CHG-04", "severity": "fixable", "evidence": "대상(billing-db)의 DB 변경인데 롤백 계획이 적혀 있지 않다." }
+  ],
+  "REQ-D05": [
+    { "rule_id": "CHG-02", "severity": "forbidden", "evidence": "출발지가 적혀 있지 않아 0.0.0.0/0으로 보며 방화벽 전체 대역 오픈 금지에 걸린다." },
+    { "rule_id": "CHG-09", "severity": "fixable", "evidence": "외부 출발지(0.0.0.0/0) 허용인데 허용 기한이 없다." }
+  ],
+  "REQ-D08": [
+    { "rule_id": "CHG-05", "severity": "fixable", "evidence": "Tier-1 서비스(auth-db) 변경인데 작업 시작(11/5(목) 10:00) 17시간 전에 요청해 24시간 전 요청 기준보다 늦다." },
+    { "rule_id": "CHG-08", "severity": "fixable", "evidence": "대상(auth-db)의 DB 변경인데 운영 반영 전 스테이징 테스트 증적이 없다." }
+  ],
+  "REQ-D09": [
+    { "rule_id": "CHG-09", "severity": "fixable", "evidence": "외부 출발지(198.51.100.24/32) 허용 기한(60일)이 최대 30일을 넘는다." }
+  ],
+  "REQ-D10": [
+    { "rule_id": "CHG-10", "severity": "forbidden", "evidence": "작업 구간(11/7(토) 09:00~10:00)이 동결 기간(FRZ-02 11월 대형 할인 행사 전사 동결, 11/6(금) 00:00~11/9(월) 00:00)과 겹치고 대상(web-02)이 그 동결 범위에 속한다." }
+  ]
+}
