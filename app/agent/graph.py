@@ -11,9 +11,11 @@ from app.agent.mcp_client import MCPClient
 from app.agent.nodes.baseline_v0 import baseline_v0
 from app.agent.nodes.classify import classify
 from app.agent.nodes.decide import decide
+from app.agent.nodes.history_agent import make_history_agent
 from app.agent.nodes.impact_agent import make_impact_agent
 from app.agent.nodes.parse_request import parse_request
 from app.agent.nodes.policy_agent import make_policy_agent
+from app.agent.nodes.validate import route_after_validate, validate
 from app.agent.state import GKState
 from app.config import GKVersion, get_settings
 
@@ -53,18 +55,51 @@ def _build_v1(mcp: MCPClient):
     return graph.compile()
 
 
+def route_after_classify_v2(state: GKState) -> list[str]:
+    """표준 변경은 정책 검사만 돈다. 그 밖은 정책, 영향도, 이력 검토 세 서브에이전트가 병렬로 돈다."""
+    return ["policy_agent"] if state["route"] == "standard" else ["policy_agent", "impact_agent", "history_agent"]
+
+
+def _build_v2(mcp: MCPClient):
+    """v1에 ③ history_agent(병렬 세 번째 갈래)와 ⑤ validate를 더한 전체 그래프.
+
+        ① parse_request → ② classify → ③ policy_agent / impact_agent / history_agent (병렬) → ④ decide → ⑤ validate
+                                                                                     ↑__________| (실패하면 1회)
+
+    validate는 표준 변경 경로에서도 돈다(docs/API_CONTRACT.md 경로 예시). 실패하면 사유를 들고 decide로 돌아가 설명을 다시
+    쓰게 하고(최대 1회), 두 번째도 실패하면 "근거 검증 미완료" 경고를 붙여 끝낸다. 측정 지점(⑥ 직전)은 validate 뒤다.
+    decide로 가는 엣지는 서브에이전트마다 따로 둔다(v1과 같은 이유). validate에서 돌아올 때는 이 엣지가 아니라 조건부
+    엣지로만 들어오므로 서브에이전트는 다시 돌지 않는다.
+    """
+    graph = StateGraph(GKState)
+    graph.add_node("parse_request", parse_request)
+    graph.add_node("classify", classify)
+    graph.add_node("policy_agent", make_policy_agent(mcp))
+    graph.add_node("impact_agent", make_impact_agent(mcp))
+    graph.add_node("history_agent", make_history_agent(mcp))
+    graph.add_node("decide", decide)
+    graph.add_node("validate", validate)
+    graph.add_edge(START, "parse_request")
+    graph.add_edge("parse_request", "classify")
+    graph.add_conditional_edges("classify", route_after_classify_v2, ["policy_agent", "impact_agent", "history_agent"])
+    graph.add_edge("policy_agent", "decide")
+    graph.add_edge("impact_agent", "decide")
+    graph.add_edge("history_agent", "decide")
+    graph.add_edge("decide", "validate")
+    graph.add_conditional_edges("validate", route_after_validate, ["decide", END])
+    return graph.compile()
+
+
 def build_graph(version: GKVersion | None = None, *, mcp: MCPClient | None = None):
     """version이 None이면 설정(GK_VERSION)을 따른다. 체크포인터는 7단계에서 인자로 더한다.
 
-    v1은 서브에이전트가 쓰는 MCP 클라이언트가 필요하다. 호출자(평가 하네스, 7단계 API의 lifespan)가 한 번 만들어 넘긴다.
+    v1, v2는 서브에이전트가 쓰는 MCP 클라이언트가 필요하다. 호출자(평가 하네스, 7단계 API의 lifespan)가 한 번 만들어 넘긴다.
     """
     version = version or get_settings().gk_version
     if version == "v0":
         return _build_v0()
-    if version == "v1":
+    if version in ("v1", "v2"):
         if mcp is None:
-            raise ValueError("v1 그래프는 MCP 클라이언트(mcp=)가 필요하다.")
-        return _build_v1(mcp)
-    if version == "v2":
-        raise NotImplementedError("v2 그래프는 아직 없다 (6단계).")
+            raise ValueError(f"{version} 그래프는 MCP 클라이언트(mcp=)가 필요하다.")
+        return _build_v1(mcp) if version == "v1" else _build_v2(mcp)
     raise ValueError(f"알 수 없는 버전: {version!r}")

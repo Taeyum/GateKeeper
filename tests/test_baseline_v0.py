@@ -98,17 +98,18 @@ async def test_두_번_틀리면_예외를_올린다(fake_env):
         await build_graph("v0").ainvoke(_state())
 
 
-def test_v2는_아직_없고_모르는_버전은_거절한다():
-    with pytest.raises(NotImplementedError):
-        build_graph("v2")
-    with pytest.raises(ValueError):
+def test_v1과_v2는_MCP_클라이언트가_필요하고_모르는_버전은_거절한다():
+    for version in ("v1", "v2"):
+        with pytest.raises(ValueError, match="MCP 클라이언트"):
+            build_graph(version)
+    with pytest.raises(ValueError, match="알 수 없는 버전"):
         build_graph("v9")  # type: ignore[arg-type]
 
 
 def test_버전을_안_주면_GK_VERSION을_따른다(monkeypatch):
     monkeypatch.setenv("GK_VERSION", "v2")
     data_loader.clear_caches()
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="v2 그래프는 MCP 클라이언트"):
         build_graph()
     monkeypatch.setenv("GK_VERSION", "v0")
     data_loader.clear_caches()

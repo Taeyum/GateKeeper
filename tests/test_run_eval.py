@@ -173,8 +173,8 @@ async def test_지원하지_않는_버전은_서버를_띄우기_전에_거절�
         async def start(self) -> None:
             started.append(1)
 
-    with pytest.raises(NotImplementedError):
-        await run_evaluation(_cfg(tmp_path, version="v2"), now=lambda: FIXED, out=lambda _: None, mcp_factory=Probe)
+    with pytest.raises(ValueError):  # 알 수 없는 버전은 설정 검증(GK_VERSION)에서 걸린다
+        await run_evaluation(_cfg(tmp_path, version="v9"), now=lambda: FIXED, out=lambda _: None, mcp_factory=Probe)  # type: ignore[arg-type]
     assert started == []
 
 
@@ -383,11 +383,6 @@ def test_CLI_인자():
     assert (args.version, args.split, args.reps, args.provider, args.langsmith, args.no_judge) == (
         "v0", "dev", 3, "ollama", True, False,
     )  # fmt: skip
-
-
-def test_v2는_아직_없다고_안내하고_종료코드_2를_낸다(tmp_path, capsys):
-    assert main(["--version", "v2", "--split", "dev", "--provider", "fake", "--results-dir", str(tmp_path)]) == 2
-    assert "아직 없는 버전" in capsys.readouterr().err
 
 
 def test_eval에_limit을_주면_파일을_열기_전에_거절한다(tmp_path, monkeypatch, capsys):

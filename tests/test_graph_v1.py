@@ -89,12 +89,11 @@ async def run(graph, request_id: str):
 # ---------------------------------------------------------------------------
 
 
-def test_v1은_MCP_클라이언트가_필요하고_v2는_아직_없다(mcp):
-    with pytest.raises(ValueError, match="MCP 클라이언트"):
-        build_graph("v1")
-    with pytest.raises(NotImplementedError):
-        build_graph("v2", mcp=mcp)
-    assert build_graph("v1", mcp=mcp) is not None
+def test_v1과_v2는_MCP_클라이언트가_필요하다(mcp):
+    for version in ("v1", "v2"):
+        with pytest.raises(ValueError, match=f"{version} 그래프는 MCP 클라이언트"):
+            build_graph(version)
+        assert build_graph(version, mcp=mcp) is not None
 
 
 def test_버전을_안_주면_GK_VERSION을_따른다(mcp, monkeypatch):
