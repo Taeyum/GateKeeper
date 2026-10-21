@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import Container, User, any_role, approver_only, decode_name, requester_only
 from app.api.errors import conflict, install_error_handlers, not_found, validation_error
 from app.api.middleware import MAX_BODY_BYTES, MaskingMiddleware, mask_json
+from app.api.store import RequestStore
 from app.audit import AuditLog
 
 KOREAN_NAME = "%EA%B9%80%EC%9A%B4%EC%98%81"  # 김운영
@@ -31,7 +32,10 @@ def make_app(tmp_path, make_settings, *, masking: bool = True) -> FastAPI:
     install_error_handlers(app)
     if masking:
         app.add_middleware(MaskingMiddleware)
-    app.state.container = Container(settings=make_settings(), audit=AuditLog(tmp_path / "audit.jsonl"))
+    # 이 부품들은 그래프나 저장소를 쓰지 않는다. 역할 확인과 감사 로그만 본다.
+    app.state.container = Container(
+        settings=make_settings(), audit=AuditLog(tmp_path / "audit.jsonl"), graph=None, store=RequestStore(), runner=None  # type: ignore[arg-type]
+    )
 
     @app.post("/api/echo")
     async def echo(payload: dict):

@@ -10,14 +10,17 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import unquote
 
 from fastapi import Header, Request
 
 from app.api.errors import forbidden
+from app.api.runner import Runner
+from app.api.store import RequestStore
 from app.audit import AuditLog, forbidden_record
 from app.config import Settings
+from app.persistence.checkpointer import thread_config
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +30,20 @@ MAX_NAME_LENGTH = 100
 
 @dataclass
 class Container:
-    """lifespan이 한 번 만들어 app.state에 두는 싱글턴 묶음. 요청마다 만들지 않는다."""
+    """lifespan이 한 번 만들어 app.state에 두는 싱글턴 묶음. 요청마다 만들지 않는다.
+
+    그래프 compile, MCP 서브프로세스, SQLite 연결은 비싸거나 하나만 있어야 하는 것들이라 서버가 뜰 때 한 번 만들고 모든 요청이 나눠 쓴다.
+    """
 
     settings: Settings
     audit: AuditLog
+    graph: Any
+    store: RequestStore
+    runner: Runner
+
+    async def values_of(self, request_id: str) -> dict[str, Any]:
+        """체크포인터에 저장된 요청의 지금 상태. 요약과 상세 응답은 항상 여기서 읽는다(진실의 원천 하나)."""
+        return (await self.graph.aget_state(thread_config(request_id))).values
 
 
 @dataclass(frozen=True)
