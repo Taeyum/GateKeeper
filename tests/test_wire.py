@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 import pytest
 
-from app import data_loader
+from app import data_loader, rules_engine
 from app.agent.graph import build_graph
 from app.agent.nodes import baseline_v0
 from app.agent.nodes.classify import RouteGuess
@@ -77,7 +77,8 @@ def test_도메인_ChangeRequest는_공식_한도_안이지만_실제로는_거�
 
 
 def test_와이어_필드가_도메인과_같다():
-    assert set(WireChangeRequest.model_fields) == set(ChangeRequest.model_fields)
+    # extra_changes_known은 와이어 전용이다 (빈 목록과 null을 구분하려는 필수 bool, 도메인에는 없다)
+    assert set(WireChangeRequest.model_fields) - {"extra_changes_known"} == set(ChangeRequest.model_fields)
     # v0은 이력을 받지 않으므로 similar_history만 와이어에서 뺀다
     assert set(WireRecommendation.model_fields) == set(Recommendation.model_fields) - {"similar_history"}
     assert set(V0Wire.model_fields) == set(V0Output.model_fields)
@@ -89,20 +90,37 @@ def _wire_request(**overrides) -> WireChangeRequest:
         "start": datetime(2026, 10, 30, 20, 0, tzinfo=KST), "end": datetime(2026, 10, 30, 21, 0, tzinfo=KST),
         "time_precision": "exact", "source": "", "port": None, "expires_days": None, "expires_at": None,
         "has_rollback": None, "has_test_evidence": None, "is_emergency": False, "ticket": "", "reason": "",
-        "restart_required": None, "extra_changes": [], "cert_expires_at": None,
+        "restart_required": None, "extra_changes_known": False, "extra_changes": [], "cert_expires_at": None,
     }  # fmt: skip
     return WireChangeRequest.model_validate({**data, **overrides})
 
 
-def test_빈_문자열과_빈_목록은_None으로_바뀐다():
+def test_빈_문자열은_None으로_바뀌고_extra_changes는_알_수_없으면_None이다():
     domain = _wire_request(source="  ", ticket="", reason=" ", extra_changes=[]).to_domain()
     assert (domain.source, domain.ticket, domain.reason, domain.extra_changes) == (None, None, None, None)
 
 
+def test_extra_changes는_알_수_있으면_빈_목록도_그대로_남고_모르면_None이다():
+    """엔진은 빈 목록이면 STD-01을 확정하고 None이면 확정하지 않는다(fail-safe). 둘을 섞으면 표준 변경이 항상 배포로 간다."""
+    assert _wire_request(extra_changes_known=True, extra_changes=[]).to_domain().extra_changes == []
+    assert _wire_request(extra_changes_known=True, extra_changes=["커넥션 타임아웃"]).to_domain().extra_changes == [
+        "커넥션 타임아웃"
+    ]
+    assert _wire_request(extra_changes_known=False, extra_changes=[]).to_domain().extra_changes is None
+    assert _wire_request(extra_changes_known=False, extra_changes=["무시된다"]).to_domain().extra_changes is None
+
+
+def test_extra_changes_known은_필수라_빠뜨리면_검증에_실패한다():
+    data = _wire_request().model_dump()
+    del data["extra_changes_known"]
+    with pytest.raises(ValueError, match="extra_changes_known"):
+        WireChangeRequest.model_validate(data)
+
+
 def test_값이_있으면_그대로_남고_세_값_필드는_null과_false를_구분한다():
     domain = _wire_request(
-        source=" 203.0.113.10/32 ", ticket="INC-2026-0412", reason="장애 대응", extra_changes=["로그 레벨"],
-        has_rollback=False, has_test_evidence=None, restart_required=True, cert_expires_at=date(2026, 11, 20),
+        source=" 203.0.113.10/32 ", ticket="INC-2026-0412", reason="장애 대응", extra_changes_known=True,
+        extra_changes=["로그 레벨"], has_rollback=False, has_test_evidence=None, restart_required=True, cert_expires_at=date(2026, 11, 20),
     ).to_domain()  # fmt: skip
     assert domain.source == "203.0.113.10/32" and domain.ticket == "INC-2026-0412" and domain.reason == "장애 대응"
     assert domain.extra_changes == ["로그 레벨"] and domain.cert_expires_at == date(2026, 11, 20)
@@ -110,20 +128,36 @@ def test_값이_있으면_그대로_남고_세_값_필드는_null과_false를_�
     assert domain.start == datetime(2026, 10, 30, 20, 0, tzinfo=KST)
 
 
-def test_dev_정답_구조화를_와이어로_옮겼다_되돌리면_extra_changes_외에는_같다():
-    """extra_changes의 [] 대 null 구분만 잃는다 (평가 필드 15개에 없고 v0은 쓰지 않는다)."""
+def _to_wire(original: ChangeRequest) -> WireChangeRequest:
+    wire_data = original.model_dump()
+    for name in ("source", "ticket", "reason"):
+        wire_data[name] = wire_data[name] or ""
+    wire_data["extra_changes_known"] = original.extra_changes is not None
+    wire_data["extra_changes"] = original.extra_changes or []
+    return WireChangeRequest.model_validate(wire_data)
+
+
+def _dev_label(request_id: str) -> ChangeRequest:
+    item = next(item for item in load_requests("dev") if item.request_id == request_id)
+    return ChangeRequest.model_validate(item.expected.structured.model_dump(exclude={"acceptable_change_types", "time_note"}))
+
+
+def test_dev_정답_구조화를_와이어로_옮겼다_되돌리면_extra_changes까지_똑같다():
+    """빈 목록과 null을 extra_changes_known으로 구분하므로 왕복해도 잃는 것이 없다."""
     for item in load_requests("dev"):
-        original = ChangeRequest.model_validate(
-            item.expected.structured.model_dump(exclude={"acceptable_change_types", "time_note"})
-        )
-        wire_data = original.model_dump()
-        for name in ("source", "ticket", "reason"):
-            wire_data[name] = wire_data[name] or ""
-        wire_data["extra_changes"] = wire_data["extra_changes"] or []
-        restored = WireChangeRequest.model_validate(wire_data).to_domain()
-        assert restored.model_dump(exclude={"extra_changes"}) == original.model_dump(exclude={"extra_changes"}), (
-            item.request_id
-        )
+        original = _dev_label(item.request_id)
+        assert _to_wire(original).to_domain().model_dump() == original.model_dump(), item.request_id
+
+
+def test_와이어를_거친_표준_변경도_엔진이_STD_01로_확정한다():
+    """N3가 anthropic에서도 통하는지: 로그 레벨만 바꾸는 REQ-D04의 빈 목록이 None으로 바뀌면 배포로 간다."""
+    original = _dev_label("REQ-D04")
+    assert original.extra_changes == []
+    confirmed = rules_engine.is_standard(_to_wire(original).to_domain())
+    assert confirmed.is_standard is True and confirmed.standard_change_id == "STD-01"
+    # 모른다고(false) 답하면 지어내지 않고 표준으로 확정하지 않는다
+    unknown = _to_wire(original).model_copy(update={"extra_changes_known": False})
+    assert rules_engine.is_standard(unknown.to_domain()).is_standard is False
 
 
 def test_권고_변환은_빈_대안을_None으로_두고_similar_history는_항상_None():

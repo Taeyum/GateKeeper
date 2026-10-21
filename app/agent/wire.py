@@ -15,10 +15,14 @@ ollama는 도메인 모델을 그대로 쓴다 (기록한 v0 측정이 유효하
 
 와이어 규칙
 1. 모든 필드를 필수로 둔다 (선택 필드 0개).
-2. null과 빈 값이 같은 뜻인 필드는 빈 문자열이나 빈 목록으로 받고 코드에서 None으로 바꾼다:
-   source, ticket, reason, extra_changes, conditional_alternative.
+2. null과 빈 값이 같은 뜻인 필드는 빈 문자열로 받고 코드에서 None으로 바꾼다:
+   source, ticket, reason, conditional_alternative.
 3. v0이 낼 수 없는 필드는 뺀다: similar_history (v0은 이력을 받지 않는다).
 4. null과 false처럼 뜻이 다른 세 값 필드와 시각, 포트 같은 값은 nullable로 남긴다.
+5. extra_changes는 빈 목록(다른 설정을 바꾸지 않음)과 null(알 수 없음)의 뜻이 다르다. 규칙 엔진은 null이면
+   STD-01 표준 변경을 확정하지 않아서(fail-safe) 둘을 섞으면 표준 변경이 항상 배포로 간다. nullable로 두면 union
+   필드가 늘어 복잡도 한도에 닿으므로 필수 bool extra_changes_known을 더한다. true면 목록을 그대로(빈 목록 유지),
+   false면 None으로 돌린다. 도메인 모델에는 없는 와이어 전용 필드이고 v0과 v1이 같은 와이어를 쓴다.
 
 도메인 모델과 필드가 어긋나지 않는지, 와이어가 복잡도 기준을 지키는지는 tests/test_wire.py가 고정하고,
 실제 API 수락은 tests/test_llm_live.py(pytest -m llm)가 확인한다.
@@ -60,14 +64,21 @@ class WireChangeRequest(BaseModel):
     ticket: str = Field(description=f"장애 티켓 번호(INC-연도-번호). {_EMPTY}")
     reason: str = Field(description=f"변경 사유. {_EMPTY}")
     restart_required: bool | None = Field(description="재시작이 필요한지. 언급이 없으면 null")
-    extra_changes: list[str] = Field(description="함께 바꾸는 다른 설정. 언급이 없으면 빈 목록")
+    extra_changes_known: bool = Field(
+        description="extra_changes를 믿어도 되는지. 본문에 함께 바꾸는 다른 설정이 있거나, 로그 레벨만 바꾸는 요청처럼 "
+        "다른 설정은 바꾸지 않는다고 볼 수 있으면 true(바꾸는 설정이 없으면 extra_changes는 빈 목록). "
+        "그 밖에 언급이 없으면 false(extra_changes는 무시된다)"
+    )
+    extra_changes: list[str] = Field(description="함께 바꾸는 다른 설정. 없으면 빈 목록")
     cert_expires_at: date | None = Field(description="현재 인증서 만료일. 언급이 없으면 null")
 
     def to_domain(self) -> ChangeRequest:
         data = self.model_dump()
         for name in ("source", "ticket", "reason"):
             data[name] = (data[name] or "").strip() or None
-        data["extra_changes"] = data["extra_changes"] or None
+        # 빈 목록(다른 설정 없음)과 None(알 수 없음)은 뜻이 다르다. 엔진은 None이면 STD-01을 확정하지 않는다.
+        if not data.pop("extra_changes_known"):
+            data["extra_changes"] = None
         return ChangeRequest.model_validate(data)
 
 

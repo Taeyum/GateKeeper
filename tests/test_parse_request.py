@@ -335,7 +335,8 @@ def test_도메인_모델은_그대로_와이어는_도메인으로_돌린다():
     wire_data = domain.model_dump()
     for name in ("source", "ticket", "reason"):
         wire_data[name] = wire_data[name] or ""
-    wire_data["extra_changes"] = wire_data["extra_changes"] or []
+    wire_data["extra_changes_known"] = domain.extra_changes is not None
+    wire_data["extra_changes"] = domain.extra_changes or []
     restored = to_change_request(WireChangeRequest.model_validate(wire_data))
     assert isinstance(restored, ChangeRequest) and restored.source is None and restored.target == domain.target
 
@@ -350,10 +351,25 @@ async def test_anthropic은_와이어로_받아_도메인으로_돌려놓는다(
     monkeypatch.setattr(node, "change_request_schema", lambda provider: seen.append(provider) or real(provider))
 
     wire = label_of("REQ-D01").model_dump(mode="json")
-    wire.update(source="", ticket="", reason="", extra_changes=[])  # 와이어는 모든 필드가 필수이고 빈 값은 빈 문자열
+    # 와이어는 모든 필드가 필수이고 빈 값은 빈 문자열이다. extra_changes_known=False는 "알 수 없음"(None)
+    wire.update(source="", ticket="", reason="", extra_changes_known=False, extra_changes=[])
     result, _ = await run(state_of("REQ-D01"), [wire])
 
     assert seen == ["anthropic"]
     assert isinstance(result["structured"], ChangeRequest)
     assert result["structured"].source is None and result["structured"].extra_changes is None
     assert result["structured"].target == "payments-db"
+
+
+async def test_anthropic에서도_다른_설정이_없다는_답은_빈_목록으로_남는다(monkeypatch):
+    """N3: 로그 레벨만 바꾸는 표준 변경은 extra_changes가 빈 목록이어야 엔진이 STD-01을 확정한다."""
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy-not-a-real-key")
+    data_loader.clear_caches()
+    monkeypatch.setattr(node, "get_llm", lambda role, settings=None: FakeChatModel(role=role))
+
+    wire = label_of("REQ-D04").model_dump(mode="json")
+    wire.update(source="", ticket="", reason="", extra_changes_known=True, extra_changes=[])
+    result, _ = await run(state_of("REQ-D04"), [wire])
+
+    assert result["structured"].extra_changes == []
