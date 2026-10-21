@@ -61,6 +61,8 @@ VITE_API_MOCK=1 bash sh/run_web.sh      # http://127.0.0.1:5173
 ## 리뷰 반영
 
 - M1 자동 승인 결과에 "자동 승인" 배지가 위(큰 배지)와 아래(칩)에 두 번 나오던 것: 아래 상태 칩을 숨기고 그 자리에 "종류: 표준 변경 (로그 레벨 변경)"을 보여 준다. 숨길지 정하는 규칙은 `showStatusChip`(`web/src/lib/presentation.ts`)이고 테스트가 있다. 권고(승인 권고)와 처리 상태(승인자 확인 중, 승인됨)는 서로 다른 정보라 자동 승인만 숨긴다.
+- M2 한글 입력 조합 중에는 v-model이 갱신되지 않아 입력 직후 첫 클릭이 비활성 버튼에 먹히던 것: 요청 입력창과 결정 사유 칸을 `:value` + `@input`으로 바꿔 조합 중에도 값을 바로 받고, 제출 버튼은 비활성으로 두지 않고 누르는 순간 입력창의 현재 값으로 빈 입력을 다시 검사한다(빈 입력이면 "변경 내용을 적어 주세요."를 보이고 입력창으로 돌아간다). 결정 사유도 누르는 순간 현재 값을 읽어 "권고와 다른 결정의 사유" 검사에 쓴다.
+  - 재현과 확인: 브라우저에서 `compositionstart`를 보내고 `compositionend` 없이 `input`(isComposing)만 보내 조합 중을 흉내 냈다. 고치기 전에는 입력창에 글자가 있는데 버튼이 비활성이고 클릭해도 넘어가지 않았다. 고친 뒤에는 버튼이 활성이고 첫 클릭으로 제출된다. 결정 사유도 조합 중에 쓴 문장이 그대로 저장되고, 사유 없이 반려 권고를 승인하면 안내가 나온다. 실제 한글 IME로 직접 타이핑한 확인은 아니며(자동화 브라우저는 IME 조합을 만들지 못한다), 자동 테스트는 없다(컴포넌트 테스트 환경이 없다).
 - K5(메인 세션 5단계): 승인자 화면의 "시스템 설명"에 백엔드 LLM의 `explanation`이 그대로 나오므로 decide 프롬프트가 규정 번호 없이 "~해요"체로 쓰게 하는 일은 메인 세션이 맡는다. 화면 세션에서는 바꿀 것이 없다.
 
 ## 목업으로 시연할 때 주의
@@ -86,4 +88,6 @@ VITE_API_MOCK=1 bash sh/run_web.sh      # http://127.0.0.1:5173
 7. `feat(web): 승인자 화면 (결재함, 상세, 결정)` : ApprovalsView, ApprovalDetail, lib/decision, tests (bc3fda8)
 8. `docs: 8단계 보고` : docs/reports/stage8.md (87f27c7)
 9. `fix(web): 자동 승인 결과에 같은 배지가 두 번 나오던 것을 고침` : M1 (VerdictSummary, presentation, RequestView, tests)
-10. `docs: 8단계 보고에 M1 반영과 목업 시연 주의 추가` : docs/reports/stage8.md
+10. `docs: 8단계 보고에 M1 반영과 목업 시연 주의 추가` : docs/reports/stage8.md (23a5feb)
+11. `fix(web): 한글 조합 중 입력이 반영되지 않아 첫 클릭이 막히던 것을 고침` : M2 (ComposeView, ApprovalDetail) (f4044c5)
+12. `docs: 8단계 보고에 M2 반영 추가` : docs/reports/stage8.md
