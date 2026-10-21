@@ -37,15 +37,29 @@ onMounted(async () => {
   }
 })
 
-const canSubmit = computed(() => text.value.trim().length > 0 && !submitting.value)
+// v-model은 한글을 조합하는 동안 값을 갱신하지 않는다(조합이 끝나야 반영). 그 사이에 버튼을 누르면 빈 입력으로 보여
+// 막히므로, 값은 input 이벤트로 바로 받고(조합 중에도 온다) 빈 입력 검사는 누르는 순간 입력창의 현재 값으로 다시 한다.
+const textEl = ref<HTMLTextAreaElement | null>(null)
+
+function onTextInput(event: Event) {
+  text.value = (event.target as HTMLTextAreaElement).value
+  if (submitError.value) submitError.value = null
+}
 
 async function submit() {
-  if (!canSubmit.value) return
+  if (submitting.value) return
+  const current = (textEl.value?.value ?? text.value).trim()
+  if (!current) {
+    submitError.value = '변경 내용을 적어 주세요.'
+    textEl.value?.focus()
+    return
+  }
+  text.value = textEl.value?.value ?? text.value
   submitting.value = true
   submitError.value = null
   try {
     const created = await api.createRequest({
-      text: text.value.trim(),
+      text: current,
       ...(parentId.value ? { parent_request_id: parentId.value } : {}),
     })
     await router.push({ name: 'request', params: { id: created.request_id } })
@@ -113,11 +127,13 @@ function workTime(item: RequestSummary): string {
             <label for="req-text" class="sr-only">변경 내용</label>
             <textarea
               id="req-text"
-              v-model="text"
+              ref="textEl"
+              :value="text"
               rows="6"
               placeholder="예: 다음 주 화요일 오후 2시에 payments-db 5432를 B페이먼츠 IP에서만 열어주세요"
               :aria-invalid="submitError ? 'true' : undefined"
               :aria-describedby="submitError ? 'submit-error' : 'emergency-hint'"
+              @input="onTextInput"
             />
             <p id="emergency-hint" class="hint">긴급한 변경이면 열려 있는 장애 티켓 번호(예: INC-2026-0412)도 같이 적어 주세요.</p>
             <NoticeBox v-if="submitError" id="submit-error" tone="error" class="error">{{ submitError }}</NoticeBox>
@@ -144,7 +160,7 @@ function workTime(item: RequestSummary): string {
 
             <div class="footer">
               <p class="mask"><AppIcon name="lock" :size="18" :stroke-width="2" /> 비밀번호나 키가 섞여 있으면 자동으로 가려져요.</p>
-              <button type="submit" class="submit" :disabled="!canSubmit">
+              <button type="submit" class="submit" :disabled="submitting">
                 {{ submitting ? '보내는 중이에요' : parentId ? '고쳐서 다시 요청하기' : '검토 요청하기' }}
                 <AppIcon name="arrow-right" :size="18" />
               </button>

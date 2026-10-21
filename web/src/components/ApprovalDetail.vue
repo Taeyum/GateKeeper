@@ -72,9 +72,16 @@ watch(
 
 const canDecide = computed(() => props.detail.status === 'awaiting_approval')
 
+// v-model은 한글 조합 중에 값을 갱신하지 않으므로 input 이벤트로 바로 받고, 결정을 누르는 순간 칸의 현재 값을 다시 읽는다.
+function onCommentInput(event: Event) {
+  comment.value = (event.target as HTMLTextAreaElement).value
+  if (error.value) error.value = null
+}
+
 async function decide(decision: Decision) {
   if (submitting.value) return
   error.value = null
+  comment.value = commentEl.value?.value ?? comment.value
   if (needsReason(rec.value?.verdict ?? null, decision) && comment.value.trim() === '') {
     error.value = reasonHint(rec.value?.verdict ?? null, decision)
     commentEl.value?.focus()
@@ -193,11 +200,12 @@ async function decide(decision: Decision) {
         <textarea
           id="decision-comment"
           ref="commentEl"
-          v-model="comment"
+          :value="comment"
           rows="3"
           placeholder="요청자에게 전달되고 기록으로 남아요."
           :aria-invalid="error ? 'true' : undefined"
           :aria-describedby="error ? 'decision-error' : 'decision-help'"
+          @input="onCommentInput"
         />
         <p id="decision-help" class="small">시스템 권고와 다르게 결정한다면 이유를 꼭 적어 주세요.</p>
         <NoticeBox v-if="error" id="decision-error" tone="error" class="gap">{{ error }}</NoticeBox>
