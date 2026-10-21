@@ -12,6 +12,8 @@
 
 비교 축은 버전(v0, v1, v2) 하나가 아니라 **버전 x main 모델** 둘이다. 같은 버전도 main 모델이 다르면 다른 실험이다. 강한 모델(`claude-sonnet-5-5`)은 v0 단독도 잘 맞혀 구조의 효과가 정확도에 안 보일 수 있고(6장), 약한 모델(`claude-haiku-5-5`)에서는 구조가 메우는 차이가 보일 수 있다. 그래서 같은 코드와 같은 정답셋으로 `MODEL_MAIN`만 바꿔 v0와 v1(v2)을 각각 다시 재고, `eval/report.py`가 summary meta의 main 모델(`models.configured.main`)로 절을 나눠 같은 모델 안에서만 버전을 비교한다. main 모델이 다른 절의 수치는 서로 비교하지 않는다. 분류용 small 모델(`claude-haiku-5-5`)과 Judge(`claude-opus-5-5`)는 모델 축에서 고정한다. 모델 축을 9단계 최종 평가에 쓸지는 그 단계에서 정한다.
 
+**로컬 모델 축 (사후 추가).** 외부 API를 못 쓰는 환경을 가정한 축으로, Ollama의 `qwen3:4b`(main)와 `qwen3:0.6b`(분류)로 v0와 v1을 dev에서 한 번씩 잰다(`--provider ollama --no-judge`). 이 PC(VRAM 6GB)에서 `qwen3:8b`는 `num_ctx=16384`일 때 GPU에 54%만 올라 느려서, GPU에 전부 올라갈 크기의 4b를 측정 전에 골랐다. 4b도 `num_ctx=16384`에서는 79%만 올라가서 `OLLAMA_NUM_CTX=10240`으로 낮춰 100% GPU에서 쟀다. `num_ctx`는 프롬프트가 잘리지 않으면 출력에 영향이 없는 성능 설정이고(v0 프롬프트는 입력 약 7.3k 토큰), 잘렸는지는 summary의 `possible_truncation_runs`로 확인한다. Judge를 쓰지 않으므로 이 축은 대안 품질이 비고, 판정, 위반, 구조화, 지연, 토큰을 본다. 이 축도 Sonnet과 Haiku 모두에서 v0와 v1이 100%로 갈리지 않는 것을 본 뒤에 더한 사후 축이다. 다른 모델 절의 수치와는 직접 비교하지 않는다.
+
 측정 대상은 각 요청을 ⑥ approval_gate 직전까지 실행한 `Recommendation`이다. 사람 승인은 평가하지 않는다.
 
 ## 2. 공정성 장치
@@ -62,6 +64,8 @@ python eval/upload_dataset.py --split eval
 python eval/run_eval.py --version v1 --split dev --reps 1 --provider anthropic
 # 모델 축 (1장): MODEL_MAIN만 바꿔 같은 버전을 다시 잰다. report가 main 모델별로 절을 나눠 보인다.
 MODEL_MAIN=claude-haiku-5-5 python eval/run_eval.py --version v0 --split dev --reps 1 --provider anthropic
+# 로컬 모델 축 (1장): 외부 API 없이 ollama로, Judge 없이 잰다. num_ctx를 낮춰 4b를 전부 GPU에 올린다.
+OLLAMA_NUM_CTX=10240 MODEL_MAIN=qwen3:4b MODEL_SMALL=qwen3:0.6b python eval/run_eval.py --version v0 --split dev --reps 1 --provider ollama --no-judge
 
 # 9단계: eval 20건, Claude API, 버전 3개 x 3회
 python eval/run_eval.py --version v0 --split eval --reps 3 --provider anthropic --langsmith
