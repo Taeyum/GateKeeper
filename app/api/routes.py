@@ -47,11 +47,14 @@ def _find(container: Container, request_id: str) -> RequestRecord:
 @router.post("/requests", status_code=202)
 async def create_request(body: CreateRequestBody, user: Annotated[User, Depends(requester_only)], container: Current) -> dict[str, Any]:
     """요청 접수. 그래프는 백그라운드로 돌고 응답은 바로 돌아온다."""
-    parent = None
+    parent_text = None
     if body.parent_request_id is not None:
         parent = container.store.get(body.parent_request_id)
         if parent is None:
             raise not_found("이전 요청을 찾을 수 없어요.")
+        # 부모의 그래프 입력(masked_text)을 쓴다. 부모가 이미 재요청이면 own_text에는 새로 쓴 부분만 있어 원 요청의 대상이 빠진다.
+        # 부모의 체크포인트가 아직 없으면(방금 접수됨) own_text로 대신한다.
+        parent_text = (await container.values_of(parent.request_id)).get("masked_text") or parent.own_text
 
     request_id = container.store.new_id()
     submitted_at = now_iso()
@@ -72,7 +75,7 @@ async def create_request(body: CreateRequestBody, user: Annotated[User, Depends(
             "submitted_at": submitted_at,
             # LLM에는 부모 본문과 합친 문장이 가고, 응답의 text에는 이번에 새로 쓴 본문(request_text)만 나간다.
             # raw_text는 넣지 않는다. 마스킹 미들웨어가 앞에서 가려서 원문이 여기까지 오지 않는다.
-            "masked_text": views.compose_text(parent.own_text if parent is not None else None, body.text),
+            "masked_text": views.compose_text(parent_text, body.text),
             "request_text": body.text,
             "trace_id": uuid.uuid4().hex,
         },

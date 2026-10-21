@@ -428,6 +428,32 @@ def test_재요청은_새_요청이고_부모_본문과_합쳐_검토하되_응�
     assert [(i["request_id"], i["parent_request_id"]) for i in items] == [("REQ-0002", "REQ-0001"), ("REQ-0001", None)]
 
 
+def test_재요청의_재요청도_원_요청_본문을_parse_입력에_담고_응답_text는_새_본문뿐이다(client, parse_calls):
+    original = gold("REQ-D01").text
+    queue("REQ-D01")
+    submit(client, "REQ-D01")
+    wait_for(client, "REQ-0001", {"awaiting_approval"})
+    client.post("/api/requests/REQ-0001/decision", json={"decision": "reject", "comment": "다시"}, headers=as_approver())
+
+    first_fix = "출발지는 B페이먼츠(203.0.113.10)입니다."
+    queue("REQ-D01")
+    client.post("/api/requests", json={"text": first_fix, "parent_request_id": "REQ-0001"}, headers=as_requester())
+    wait_for(client, "REQ-0002", {"awaiting_approval"})
+    client.post("/api/requests/REQ-0002/decision", json={"decision": "reject", "comment": "한 번 더"}, headers=as_approver())
+
+    second_fix = "11/3 화요일 오후 2시에 7일만 열어주세요."
+    queue("REQ-D01")
+    accepted = client.post("/api/requests", json={"text": second_fix, "parent_request_id": "REQ-0002"}, headers=as_requester())
+    assert accepted.json() == {"request_id": "REQ-0003", "parent_request_id": "REQ-0002", "status": "reviewing"}
+    grandchild = wait_for(client, "REQ-0003", {"awaiting_approval"})
+
+    third_call = human_text(parse_calls[-1])  # 부모(REQ-0002)가 이미 재요청이어도 원 요청의 대상이 입력에 남는다
+    assert original in third_call and first_fix in third_call and second_fix in third_call
+    assert third_call.index(original) < third_call.index(first_fix) < third_call.index(second_fix)
+    assert grandchild["text"] == second_fix  # 응답에는 이번에 새로 쓴 본문뿐이다
+    assert original not in grandchild["text"] and first_fix not in grandchild["text"]
+
+
 def test_없는_부모로_재요청하면_404다(client):
     response = client.post("/api/requests", json={"text": "고쳐서 다시", "parent_request_id": "REQ-9999"}, headers=as_requester())
     assert response.status_code == 404 and response.json()["error"]["code"] == "not_found"

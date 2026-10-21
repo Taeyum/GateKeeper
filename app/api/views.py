@@ -20,8 +20,9 @@ SUBAGENT_OF_NODE = {"policy_agent": "policy", "impact_agent": "impact", "history
 
 
 def compose_text(parent_text: str | None, new_text: str) -> str:
-    """재요청이면 부모의 마스킹 본문과 새 본문을 합쳐 parse_request에 넣을 문장을 만든다. 프롬프트 파일은 건드리지 않는다.
+    """재요청이면 부모의 그래프 입력과 새 본문을 합쳐 parse_request에 넣을 문장을 만든다. 프롬프트 파일은 건드리지 않는다.
 
+    parent_text는 부모의 masked_text여야 한다. 부모가 이미 재요청이면 앞선 내용이 합쳐진 문장이라 원 요청의 대상이 이어진다.
     합친 문장은 그래프 입력(masked_text)에만 쓰고, 응답의 text에는 이번에 새로 쓴 본문만 보낸다.
     """
     if not parent_text:
