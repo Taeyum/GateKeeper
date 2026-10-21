@@ -21,6 +21,9 @@ from eval.report import (
     detail_table,
     headline_table,
     main,
+    main_model,
+    model_slug,
+    select_by_model,
     select_latest,
 )
 
@@ -28,7 +31,9 @@ PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 NOW = datetime(2026, 10, 21, 12, 0, tzinfo=KST)
 
 
-def make_summary(version="v0", *, split="dev", provider="ollama", started="2026-10-21T09:00:00+09:00", **overrides):
+def make_summary(
+    version="v0", *, split="dev", provider="ollama", started="2026-10-21T09:00:00+09:00", model="qwen3:8b", **overrides
+):
     """harness가 쓰는 summary와 같은 키를 가진 합성 summary."""
     metrics = aggregate([], 1).model_dump()
     metrics.update(
@@ -43,8 +48,8 @@ def make_summary(version="v0", *, split="dev", provider="ollama", started="2026-
             "version": version, "split": split, "provider": provider, "reps": 1, "n_requests": 10,
             "started_at": started, "finished_at": started,
             "git": {"commit": "a" * 40, "dirty": False},
-            "models": {"configured": {"main": "qwen3:8b", "small": "qwen3:0.6b", "judge": "qwen3:8b"},
-                       "observed": ["qwen3:8b"], "judge_observed": ["qwen3:8b"]},
+            "models": {"configured": {"main": model, "small": "qwen3:0.6b", "judge": "qwen3:8b"},
+                       "observed": [model], "judge_observed": ["qwen3:8b"]},
             "prompt_sha256": {"baseline_v0.md": "b" * 64, "judge_prompt.md": "c" * 64},
             "data_sha256": {"change_policy.md": "1", "rules.json": "2", "cmdb.json": "3", "change_calendar.json": "4",
                             "open_incidents.json": "5", f"requests_{split}.json": "6"},
@@ -110,6 +115,66 @@ def test_provider를_안_주면_가장_최근_실행의_provider를_쓰고_다�
 
 def test_split에_summary가_없으면_빈_결과():
     assert select_latest([make_summary("v0")], "eval", None) == (None, {})
+
+
+# ---------------------------------------------------------------------------
+# 모델 축: 같은 provider 안에서 main 모델별로 나눈다
+# ---------------------------------------------------------------------------
+
+SONNET, HAIKU = "claude-sonnet-5-5", "claude-haiku-5-5"
+
+
+def two_models():
+    """Sonnet(v0, v1 1차, v1 2차)과 Haiku(v0, v1). 1차와 2차는 시작 시각만 다르다."""
+    def cloud(version, model, started, accuracy):
+        return make_summary(version, provider="anthropic", model=model, started=started, metrics={"verdict_accuracy": accuracy})
+
+    return [
+        cloud("v0", SONNET, "2026-10-21T10:00:00+09:00", 1.0),
+        cloud("v1", SONNET, "2026-10-21T10:05:00+09:00", 0.9),  # 1차
+        cloud("v1", SONNET, "2026-10-21T11:00:00+09:00", 1.0),  # 2차: 이 모델의 v1은 이쪽이 최신이다
+        cloud("v0", HAIKU, "2026-10-21T12:00:00+09:00", 0.5),
+        cloud("v1", HAIKU, "2026-10-21T12:05:00+09:00", 0.8),
+        make_summary("v0", provider="ollama", started="2026-10-21T13:00:00+09:00"),  # 다른 provider는 섞이지 않는다
+    ]
+
+
+def test_같은_provider_안에서_main_모델별로_버전마다_최신_summary를_고른다():
+    provider, by_model = select_by_model(two_models(), "dev", "anthropic")
+    assert provider == "anthropic"
+    assert list(by_model) == [SONNET, HAIKU]  # 처음 측정한 순서
+    assert set(by_model[SONNET]) == {"v0", "v1"} and set(by_model[HAIKU]) == {"v0", "v1"}
+    assert by_model[SONNET]["v1"]["meta"]["started_at"].startswith("2026-10-21T11:00")  # 모델 안에서 최신(2차)
+    assert by_model[SONNET]["v1"]["metrics"]["verdict_accuracy"] == 1.0
+    assert by_model[HAIKU]["v0"]["metrics"]["verdict_accuracy"] == 0.5  # Sonnet의 최신 v0로 덮이지 않는다
+    # provider를 안 주면 가장 최근 실행의 provider(여기서는 ollama)만 쓴다
+    provider, by_model = select_by_model(two_models(), "dev", None)
+    assert provider == "ollama" and list(by_model) == ["qwen3:8b"]
+    assert select_by_model([make_summary("v0")], "eval", None) == (None, {})
+
+
+def test_모델이_다르면_절과_차트를_따로_만들고_수치를_섞지_않는다(tmp_path):
+    write_summaries(tmp_path, two_models())
+    out = tmp_path / "report.md"
+    assert build_report(tmp_path, out, tmp_path / "charts", ["dev"], "anthropic", now=NOW) == ["dev"]
+    text = out.read_text(encoding="utf-8")
+    sonnet_part, haiku_part = text.split(f"## dev 평가 (main 모델 {HAIKU})")
+    assert f"## dev 평가 (main 모델 {SONNET})" in sonnet_part
+    assert "| 판정 정확도 | 100.0% | 100.0% | - | - |" in sonnet_part  # v0, v1(2차)
+    assert "| 판정 정확도 | 50.0% | 80.0% | - | - |" in haiku_part and "| 판정 정확도 | 50.0% |" not in sonnet_part
+    assert "main 모델이 버전마다 다르다" not in text  # 모델은 처음부터 따로 비교한다
+    assert "main 모델이 다른 절의 수치와는 직접 비교하지 않는다" in text
+    names = sorted(p.name for p in (tmp_path / "charts").glob("dev_*_verdict_accuracy.png"))
+    assert names == [f"dev_{HAIKU}_verdict_accuracy.png", f"dev_{SONNET}_verdict_accuracy.png"]
+    assert f"![dev_{HAIKU}_verdict_accuracy](charts/dev_{HAIKU}_verdict_accuracy.png)" in haiku_part
+
+
+def test_차트_파일명에_쓰는_모델_이름과_모델_기록이_없는_summary():
+    assert model_slug("qwen3:8b") == "qwen3-8b" and model_slug(SONNET) == SONNET and model_slug("(모델 미기록)") == "model"
+    old = make_summary("v0")
+    del old["meta"]["models"]
+    assert main_model(old) == "(모델 미기록)"
+    assert main_model(make_summary("v0", model=HAIKU)) == HAIKU
 
 
 # ---------------------------------------------------------------------------
@@ -239,11 +304,12 @@ def test_report_md와_차트_PNG를_만든다(tmp_path):
     assert "비독립 평가" in text and "n=10이면 최댓값과 같다" in text  # 비독립 Judge, p95 정의 주석
     images = sorted((tmp_path / "charts").glob("dev_*.png"))
     assert [p.stem for p in images] == sorted(
-        f"dev_{n}"
+        f"dev_qwen3-8b_{n}"  # 차트 파일명에 main 모델이 들어간다
         for n in ("verdict_accuracy", "violation_f1", "latency_p95", "tokens_per_run", "consistency", "self_contradiction")
     )
     assert all(p.read_bytes().startswith(PNG_MAGIC) and p.stat().st_size > 5_000 for p in images)
-    assert "![dev_verdict_accuracy](charts/dev_verdict_accuracy.png)" in text
+    assert "![dev_qwen3-8b_verdict_accuracy](charts/dev_qwen3-8b_verdict_accuracy.png)" in text
+    assert "## dev 평가 (main 모델 qwen3:8b)" in text
 
 
 def test_버전이_하나뿐이어도_리포트가_만들어진다(tmp_path):
@@ -260,7 +326,7 @@ def test_split별로_절을_나누고_eval_절에는_집계만_있다(tmp_path):
     text = out.read_text(encoding="utf-8")
     assert "## dev 평가" in text and "## eval 평가" in text
     assert "REQ-" not in text  # 요청 ID나 본문이 없다
-    assert (tmp_path / "charts/eval_verdict_accuracy.png").exists()
+    assert (tmp_path / "charts/eval_qwen3-8b_verdict_accuracy.png").exists()
     # --split을 좁히면 그 절만 쓴다
     build_report(tmp_path, out, tmp_path / "charts", ["eval"], None, now=NOW)
     assert "## dev 평가" not in out.read_text(encoding="utf-8")

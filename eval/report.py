@@ -3,9 +3,10 @@
     python eval/report.py                 results/에 있는 모든 split
     python eval/report.py --split eval    eval 절만 (집계 수치만 쓴다)
 
-results/*.summary.json에서 split별로 같은 provider의 버전별 최신 summary를 골라 results/report.md와
-results/charts/<split>_*.png를 만든다. 요청별 정보는 summary에 없으므로 eval 리포트도 집계만 담는다
-(CLAUDE.md 절대 규칙 1). LangSmith 없이 로컬 결과만으로 만들어진다.
+results/*.summary.json에서 split별로 같은 provider 안에서 main 모델마다 버전별 최신 summary를 골라
+results/report.md와 results/charts/<split>_<모델>_*.png를 만든다. 모델이 다르면 같은 버전도 다른 실험이라
+모델마다 절을 따로 두고 서로 섞지 않는다 (모델은 summary meta의 models.configured.main 기준). 요청별 정보는
+summary에 없으므로 eval 리포트도 집계만 담는다 (CLAUDE.md 절대 규칙 1). LangSmith 없이 로컬 결과만으로 만들어진다.
 
 차트: 정체성은 버전이라 범주 색 슬롯 1~3(파랑, 주황, 청록)을 v0, v1, v2에 고정한다. 청록은 밝은 배경에서
 대비가 3:1보다 낮아서(2.74) 막대마다 값 라벨을 붙이고 report.md에 같은 수치의 표를 둔다.
@@ -14,6 +15,7 @@ results/charts/<split>_*.png를 만든다. 요청별 정보는 summary에 없으
 import argparse
 import json
 import math
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -72,6 +74,39 @@ def select_latest(summaries: list[dict[str, Any]], split: str, provider: str | N
         if current is None or meta["started_at"] > current["meta"]["started_at"]:
             chosen[meta["version"]] = summary
     return provider, chosen
+
+
+def main_model(summary: dict[str, Any]) -> str:
+    """summary meta에 설정된 main 모델. 이 기록이 없던 시절의 summary는 '(모델 미기록)'이다."""
+    return summary["meta"].get("models", {}).get("configured", {}).get("main") or "(모델 미기록)"
+
+
+def model_slug(model: str) -> str:
+    """차트 파일명에 쓰는 모델 이름. 'qwen3:8b'는 'qwen3-8b'가 된다."""
+    return re.sub(r"[^A-Za-z0-9.]+", "-", model).strip("-") or "model"
+
+
+def select_by_model(
+    summaries: list[dict[str, Any]], split: str, provider: str | None
+) -> tuple[str | None, dict[str, dict[str, dict]]]:
+    """같은 provider 안에서 main 모델마다 버전별 최신 summary를 고른다.
+
+    모델이 다르면 같은 버전도 다른 실험이다. 강한 모델에서는 v0도 잘 맞혀 구조의 효과가 안 보이고(EVAL.md 6장),
+    약한 모델에서는 구조가 메우는 차이가 보인다. 그래서 모델을 섞어 최신 하나만 고르지 않고 모델마다 따로 고른다.
+    모델 순서는 처음 측정한 순서다.
+    """
+    provider, _ = select_latest(summaries, split, provider)
+    if provider is None:
+        return None, {}
+    pool = [s for s in summaries if s["meta"]["split"] == split and s["meta"]["provider"] == provider]
+    first_seen: dict[str, str] = {}
+    for summary in pool:
+        model, started = main_model(summary), summary["meta"]["started_at"]
+        first_seen[model] = min(first_seen.get(model, started), started)
+    ordered = sorted(first_seen, key=first_seen.__getitem__)
+    return provider, {
+        model: select_latest([s for s in pool if main_model(s) == model], split, provider)[1] for model in ordered
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -405,12 +440,12 @@ def chart_specs(chosen: dict[str, dict]) -> list[dict[str, Any]]:
 
 def render_charts(chosen: dict[str, dict], split: str, provider: str, charts_dir: Path) -> list[Path]:
     first = next(iter(chosen.values()))["meta"]
-    models = {s["meta"]["models"]["configured"]["main"] for s in chosen.values()}
+    models = {main_model(s) for s in chosen.values()}
     model_text = next(iter(models)) if len(models) == 1 else "모델 혼합"
     paths = []
     for spec in chart_specs(chosen):
         subtitle = f"{split} {first['n_requests']}건 x {first['reps']}회, {provider} ({model_text}). {spec['note']}"
-        path = charts_dir / f"{split}_{spec['name']}.png"
+        path = charts_dir / f"{split}_{model_slug(model_text)}_{spec['name']}.png"
         render_bar_chart(path, spec["title"], subtitle, spec["values"], label_fmt=spec["label_fmt"], ylim=spec["ylim"],
                          ticks=spec["ticks"], tick_fmt=spec.get("tick_fmt"))  # fmt: skip
         paths.append(path)
@@ -425,11 +460,13 @@ def render_charts(chosen: dict[str, dict], split: str, provider: str, charts_dir
 def split_section(split: str, provider: str, chosen: dict[str, dict], chart_paths: list[Path], report_dir: Path) -> str:
     first = next(iter(chosen.values()))["meta"]
     present = [v for v in VERSIONS if v in chosen]
+    model = main_model(next(iter(chosen.values())))
     parts = [
-        f"## {split} 평가",
+        f"## {split} 평가 (main 모델 {model})",
         "",
-        f"provider {provider}, 요청 {first['n_requests']}건 x 반복 {first['reps']}회. 측정한 버전: {', '.join(present)}.",
-        "각 버전의 가장 최근 실행을 쓴다.",
+        f"provider {provider}, main 모델 {model}, 요청 {first['n_requests']}건 x 반복 {first['reps']}회. "
+        f"측정한 버전: {', '.join(present)}.",
+        "같은 main 모델 안에서 각 버전의 가장 최근 실행을 쓴다. main 모델이 다른 절의 수치와는 직접 비교하지 않는다.",
         "",
         "### Before/After 표",
         "",
@@ -470,11 +507,12 @@ def build_report(
     now = now or datetime.now(KST)
     sections, written = [], []
     for split in splits:
-        chosen_provider, chosen = select_latest(summaries, split, provider)
-        if not chosen:
+        chosen_provider, by_model = select_by_model(summaries, split, provider)
+        if not by_model:
             continue
-        chart_paths = render_charts(chosen, split, chosen_provider, charts_dir)
-        sections.append(split_section(split, chosen_provider, chosen, chart_paths, out_path.parent))
+        for chosen in by_model.values():
+            chart_paths = render_charts(chosen, split, chosen_provider, charts_dir)
+            sections.append(split_section(split, chosen_provider, chosen, chart_paths, out_path.parent))
         written.append(split)
     if not written:
         return []
