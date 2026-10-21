@@ -1,0 +1,100 @@
+"""테스트용 가짜 LLM. 테스트가 미리 넣어 둔 응답을 순서대로 돌려준다.
+
+단위 테스트와 클라우드 세션(LLM_PROVIDER=fake)에서 쓴다. 평가에는 쓰지 않는다.
+응답은 role(main/small/judge)별 큐에 쌓고, 호출할 때마다 하나씩 꺼낸다.
+큐가 비면 조용히 기본값을 만들지 않고 예외를 던진다. 테스트가 기대한 호출 수와
+실제 호출 수가 어긋나는 것을 바로 드러내려는 것.
+"""
+
+import json
+from collections import defaultdict, deque
+from typing import Any
+
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.runnables import Runnable, RunnableLambda
+from pydantic import BaseModel
+
+_RESPONSES: dict[str, deque[Any]] = defaultdict(deque)
+
+
+class FakeResponsesExhausted(RuntimeError):
+    """role의 응답 큐가 비었는데 또 호출했다."""
+
+
+def set_fake_responses(role: str, responses: list[Any]) -> None:
+    """role의 응답 큐를 주어진 순서로 교체한다.
+
+    문자열은 그대로 응답 본문이 된다. BaseModel/dict는 with_structured_output에서 스키마로 돌려주고,
+    일반 호출에서는 JSON 문자열이 된다.
+    """
+    _RESPONSES[role] = deque(responses)
+
+
+def reset_fake_responses() -> None:
+    _RESPONSES.clear()
+
+
+def _coerce(schema: Any, item: Any) -> Any:
+    """큐에서 꺼낸 값을 요청된 스키마의 결과로 바꾼다."""
+    if isinstance(schema, type) and issubclass(schema, BaseModel):
+        if isinstance(item, schema):
+            return item
+        if isinstance(item, BaseModel):
+            return schema.model_validate(item.model_dump())
+        if isinstance(item, str):
+            return schema.model_validate_json(item)
+        return schema.model_validate(item)
+    # 스키마가 JSON Schema dict면 dict 결과를 돌려준다.
+    if isinstance(item, BaseModel):
+        return item.model_dump()
+    if isinstance(item, str):
+        return json.loads(item)
+    return item
+
+
+def _as_text(item: Any) -> str:
+    if isinstance(item, str):
+        return item
+    if isinstance(item, BaseModel):
+        return item.model_dump_json()
+    return json.dumps(item, ensure_ascii=False)
+
+
+class FakeChatModel(BaseChatModel):
+    role: str = "main"
+
+    @property
+    def _llm_type(self) -> str:
+        return "gatekeeper-fake"
+
+    def _next(self) -> Any:
+        queue = _RESPONSES[self.role]
+        if not queue:
+            raise FakeResponsesExhausted(
+                f"fake LLM({self.role})의 응답이 없다. set_fake_responses로 먼저 넣어 둔다."
+            )
+        return queue.popleft()
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        message = AIMessage(content=_as_text(self._next()))
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+    def with_structured_output(
+        self, schema: Any, *, include_raw: bool = False, **kwargs: Any
+    ) -> Runnable:
+        def _invoke(_input: Any) -> Any:
+            item = self._next()
+            parsed = _coerce(schema, item)
+            if include_raw:
+                return {"raw": AIMessage(content=_as_text(item)), "parsed": parsed, "parsing_error": None}
+            return parsed
+
+        return RunnableLambda(_invoke)
