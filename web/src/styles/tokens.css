@@ -1,0 +1,45 @@
+/* 디자인(Claude Design artifact)에서 옮긴 토큰. 글자와 배경 대비는 4.5:1 이상이다. */
+:root {
+  --ink: #12142b;
+  --ink2: #4b4f69;
+  --ink3: #666a85;
+  --line: #e3e6f4;
+  --line2: #d3d7ea;
+  --bg: #f1f3fb;
+  --surface: #ffffff;
+  --soft: #f7f8fc;
+
+  --blue: #1f3fe0;
+  --blue-bg: #ecefff;
+  --blue-line: #bfc8fa;
+
+  --band: linear-gradient(135deg, #0a0d22 0%, #12163a 55%, #1b2054 100%);
+
+  /* 판정과 상태 색. 색만으로 구분하지 않고 배지에는 글자와 아이콘을 함께 쓴다. */
+  --reject-bg: #fdecec;
+  --reject-line: #f5c6c3;
+  --reject-fg: #b42318;
+  --warn-bg: #fff1e0;
+  --warn-line: #f3cfa0;
+  --warn-fg: #9a4500;
+  --ok-bg: #e6f5ea;
+  --ok-line: #bfe3c9;
+  --ok-fg: #1b6b3a;
+  --auto-bg: #e0f4f4;
+  --auto-line: #b5e2e2;
+  --auto-fg: #0b6b6b;
+  --wait-bg: #eef0f7;
+  --wait-line: #d9ddec;
+  --wait-fg: #3a4160;
+
+  --radius-card: 20px;
+  --radius-md: 16px;
+  --radius-sm: 12px;
+  --radius-pill: 999px;
+
+  --font: 'Inter', 'Noto Sans KR', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --content-max: 1360px;
+  --gutter: 32px;
+}
