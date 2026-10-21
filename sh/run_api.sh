@@ -25,7 +25,8 @@ cd "$(dirname "$0")/.."
 PORT="${GK_API_PORT:-8100}"
 
 # ── 0) 설정 읽기 (키 값은 읽지 않고 설정 여부만 확인) ───────────────────
-read -r PROVIDER MAIN_MODEL SMALL_MODEL OLLAMA_URL HAS_KEY < <(python - <<'PY'
+# Windows의 python.exe는 줄 끝에 \r을 붙여서(HAS_KEY가 "yes\r"이 되어 키가 없다고 오판한다) tr로 지운다.
+read -r PROVIDER MAIN_MODEL SMALL_MODEL OLLAMA_URL HAS_KEY < <(python - <<'PY' | tr -d '\r'
 from app.config import get_settings
 
 s = get_settings()
