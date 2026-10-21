@@ -1,0 +1,226 @@
+{
+  "meta": {
+    "version": "v1",
+    "split": "dev",
+    "provider": "anthropic",
+    "reps": 1,
+    "n_requests": 10,
+    "started_at": "2026-10-21T19:53:01.762469+09:00",
+    "finished_at": "2026-10-21T19:56:13.333316+09:00",
+    "git": {
+      "commit": "f239b5d0b10b6a98fb5cdd8c052c6cda8dc1b8e6",
+      "dirty": true
+    },
+    "models": {
+      "configured": {
+        "main": "claude-sonnet-5-5",
+        "small": "claude-haiku-5-5",
+        "judge": "claude-opus-5-5"
+      },
+      "observed": [
+        "claude-haiku-5-5",
+        "claude-sonnet-5-5"
+      ],
+      "judge_observed": [
+        "claude-opus-5-5"
+      ]
+    },
+    "prompt_sha256": {
+      "parse_request.md": "346914bbe75ca67f31524d5db7e9ca7d985ec5ff6972bd0ae2730843d718aa7b",
+      "structure_rules.md": "22e1a06445468e41a3ce88869f3b40eeca6ee8ecaf90e9a03e2efc620bee12d2",
+      "classify.md": "6bff0215e722c4fadbfd8cebfc4269eca1bb6aac2715a28c68a271f1bce9ed9d",
+      "policy_agent.md": "1ace4a03a92d9fa3debcc53f05c46cab70a7ef40a287099837276fa6feb3744a",
+      "impact_agent.md": "b34e3ecac3ff741a57ada42bc3c61ea0db49bf1fdef6ef7780240bf403a2b954",
+      "decide.md": "30e7a6266ac1dd80329bbae2195c868d04df17f5cd2f9c90397669ba36083602",
+      "judge_prompt.md": "d39fc0be8b48427f3d40b82f9531e2b24b3b33e17efb3735749f7d46e3b4e315"
+    },
+    "data_sha256": {
+      "change_policy.md": "9122a52876dd385c169579218d787b8517b4c80220f07fa9a366caf5372c62c4",
+      "rules.json": "b4b2d164d8d611578bb33c9b40c5d69b0689f962425680ca6adf939403ce23c0",
+      "cmdb.json": "772ddda760d4b010b3bcb5fa64ce63df62904348ead05c052ad553bdbddaa399",
+      "change_calendar.json": "98ecda69c18998ed25ffa3dad05a94798f8ba9b5e6f0aae548743ac5dd9b7c55",
+      "open_incidents.json": "8b3dbb38ff30b968e2ba2e0c2424c852c3dce7dda61b2fe1e14e714425396103",
+      "requests_dev.json": "d38a66a3e3e5f12fe7865e078b17546f827d8fd9576a764cbcc547526987f07b"
+    },
+    "packages": {
+      "langchain-core": "1.6.12",
+      "langchain-ollama": "1.1.0",
+      "langchain-anthropic": "1.7.6",
+      "langgraph": "1.2.16",
+      "langsmith": "0.14.11",
+      "pydantic": "2.14.1"
+    },
+    "ollama_num_ctx": null,
+    "ollama_num_parallel": null,
+    "timeout_s": 600.0,
+    "warmup": "first_request",
+    "warmup_error": null,
+    "langsmith": {
+      "enabled": true,
+      "project": "gk-v1-dev-20261021-195301"
+    },
+    "judge": {
+      "enabled": true,
+      "model": "claude-opus-5-5",
+      "independent": true
+    }
+  },
+  "metrics": {
+    "n_requests": 10,
+    "reps": 1,
+    "n_runs": 10,
+    "n_errors": 0,
+    "verdict_accuracy": 1.0,
+    "violation_tp": 12,
+    "violation_fp": 0,
+    "violation_fn": 0,
+    "violation_precision": 1.0,
+    "violation_recall": 1.0,
+    "violation_f1": 1.0,
+    "structured_accuracy": 1.0,
+    "structured_by_field": {
+      "target": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "change_type": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "start": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "end": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "time_precision": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "source": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "port": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "expires_days": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "expires_at": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "has_rollback": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "has_test_evidence": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "is_emergency": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "ticket": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "restart_required": {
+        "correct": 2,
+        "total": 2,
+        "accuracy": 1.0
+      },
+      "cert_expires_at": {
+        "correct": 1,
+        "total": 1,
+        "accuracy": 1.0
+      }
+    },
+    "hallucinated_count": 0,
+    "miscited_count": 0,
+    "miscited_strict_count": 3,
+    "risk_accuracy": 0.875,
+    "risk_n": 8,
+    "emergency_accuracy": 1.0,
+    "emergency_n": 1,
+    "self_contradiction_rate": 0.0,
+    "self_contradiction_count": 0,
+    "self_contradiction_n": 10,
+    "rag_recall_at_3": null,
+    "consistency": null,
+    "alternative_score": 4.166666666666667,
+    "alternative_n": 6
+  },
+  "latency": {
+    "n": 10,
+    "mean_s": 13.44422225999997,
+    "p95_s": 20.556875900000705,
+    "max_s": 20.556875900000705
+  },
+  "usage": {
+    "llm_calls_total": 45,
+    "llm_calls_per_run": 4.5,
+    "llm_errors": 0,
+    "input_tokens_total": 173311,
+    "output_tokens_total": 13177,
+    "reasoning_tokens_total": 4122,
+    "input_tokens_per_run": 17331.1,
+    "output_tokens_per_run": 1317.7,
+    "tokens_per_run": 18648.8,
+    "by_model": {
+      "claude-sonnet-5-5": {
+        "calls": 35,
+        "input_tokens": 163198,
+        "output_tokens": 12967,
+        "reasoning_tokens": 4122
+      },
+      "claude-haiku-5-5": {
+        "calls": 10,
+        "input_tokens": 10113,
+        "output_tokens": 210,
+        "reasoning_tokens": 0
+      }
+    }
+  },
+  "cost": {
+    "unit": "USD per 1M tokens",
+    "total_usd": null,
+    "per_run_usd": null
+  },
+  "judge_usage": {
+    "llm_calls": 6,
+    "input_tokens": 52486,
+    "output_tokens": 2348,
+    "errors": 0
+  },
+  "counters": {
+    "parse_retries": 0,
+    "required_field_retries": 0,
+    "route_disagreements": 0,
+    "decide_retries": 0,
+    "alternative_regenerations": 0,
+    "alternative_fallbacks": 0
+  },
+  "flags": {
+    "possible_truncation_runs": 0
+  }
+}
