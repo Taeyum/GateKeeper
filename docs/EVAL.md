@@ -10,6 +10,8 @@
 | v1 | + 결정론 MCP Tool + 병렬 서브에이전트 + 라우팅 | 판정 정확도, 일관성, 지연 |
 | v2 | + 이력 RAG + Validator | 근거 품질, 환각 차단, 위험도. 대신 늘어난 지연과 토큰 |
 
+비교 축은 버전(v0, v1, v2) 하나가 아니라 **버전 x main 모델** 둘이다. 같은 버전도 main 모델이 다르면 다른 실험이다. 강한 모델(`claude-sonnet-5-5`)은 v0 단독도 잘 맞혀 구조의 효과가 정확도에 안 보일 수 있고(6장), 약한 모델(`claude-haiku-5-5`)에서는 구조가 메우는 차이가 보일 수 있다. 그래서 같은 코드와 같은 정답셋으로 `MODEL_MAIN`만 바꿔 v0와 v1(v2)을 각각 다시 재고, `eval/report.py`가 summary meta의 main 모델(`models.configured.main`)로 절을 나눠 같은 모델 안에서만 버전을 비교한다. main 모델이 다른 절의 수치는 서로 비교하지 않는다. 분류용 small 모델(`claude-haiku-5-5`)과 Judge(`claude-opus-5-5`)는 모델 축에서 고정한다. 모델 축을 9단계 최종 평가에 쓸지는 그 단계에서 정한다.
+
 측정 대상은 각 요청을 ⑥ approval_gate 직전까지 실행한 `Recommendation`이다. 사람 승인은 평가하지 않는다.
 
 ## 2. 공정성 장치
@@ -58,6 +60,8 @@ python eval/upload_dataset.py --split eval
 # 단계마다: dev 10건, Claude API, 1회 (--langsmith를 주면 측정 중 추적을 켠다. 같은 플래그끼리 비교한다)
 # 5단계 마무리부터 dev도 anthropic으로 한다 (이 PC에서 ollama가 느림). 4단계 v0와 5단계 1차 v1의 ollama 측정은 기록으로 남아 있다.
 python eval/run_eval.py --version v1 --split dev --reps 1 --provider anthropic
+# 모델 축 (1장): MODEL_MAIN만 바꿔 같은 버전을 다시 잰다. report가 main 모델별로 절을 나눠 보인다.
+MODEL_MAIN=claude-haiku-5-5 python eval/run_eval.py --version v0 --split dev --reps 1 --provider anthropic
 
 # 9단계: eval 20건, Claude API, 버전 3개 x 3회
 python eval/run_eval.py --version v0 --split eval --reps 3 --provider anthropic --langsmith
@@ -97,3 +101,5 @@ python eval/rescore.py results/<날짜시각>_v0_dev.summary.json
 ## 6. v0이 너무 잘 맞을 때
 
 dev 10건에서 v0 판정 정확도가 90%를 넘으면 개선 폭이 안 보인다. 이 경우에도 정답셋은 바꾸지 않는다. 대신 일관성, 환각 조항 수, 비용 지표에서 차이를 보여준다. 규칙이 결정론이라는 장점은 일관성과 오인용 수에서 가장 잘 드러난다.
+
+**모델 축.** 강한 모델(Sonnet)에서 v0이 90%를 넘으면 정답셋이나 v0 프롬프트를 바꾸지 않고, 같은 정답셋을 약한 모델(Haiku)로 한 번 더 재서 구조(v1, v2)가 약한 모델의 오류를 얼마나 메우는지 본다. v0를 일부러 약하게 만드는 것이 아니라 같은 시스템을 다른 모델로 재는 독립 축이므로, 모델마다 v0와 v1을 같은 조건으로 따로 비교하고 결과가 어느 쪽이든 그대로 적는다(Haiku에서도 v0가 잘 맞으면 그것이 결과다). 이 축은 Sonnet dev에서 v0와 v1이 모두 100%로 갈리지 않는 것을 본 뒤에 더한 것이라 사후에 추가한 축이라는 점을 보고서에 밝힌다. 모델은 정확도를 보고 고르지 않고 소형 모델 하나(`claude-haiku-5-5`)로 정했다.
