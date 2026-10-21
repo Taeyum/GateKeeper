@@ -90,5 +90,5 @@ cat <<EOF
 ################################################################
 
 다음 확인:
-  .venv/bin/python -m pytest -q -m llm -s    실제 구조화 출력 점검
+  uv run python -m pytest -q -m llm -s    실제 구조화 출력 점검
 EOF

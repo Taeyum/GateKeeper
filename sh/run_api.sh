@@ -18,7 +18,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # python3가 alias로 다른 경로를 가리키는 머신에서도 이 프로젝트의 .venv를 쓰게 한다.
+# Windows(Git Bash)의 venv는 bin 대신 Scripts에 python.exe를 둔다.
 [ -x ".venv/bin/python" ] && export PATH="$PWD/.venv/bin:$PATH"
+[ -x ".venv/Scripts/python.exe" ] && export PATH="$PWD/.venv/Scripts:$PATH"
 
 PORT="${GK_API_PORT:-8100}"
 

@@ -17,8 +17,17 @@ cd "$(dirname "$0")/.."
 
 PY_VERSION="${GK_PYTHON_VERSION:-3.11}"
 
+# Windows(Git Bash)의 venv는 bin 대신 Scripts에 python.exe를 둔다. 만들어진 쪽을 찾아 쓴다.
+find_venv_python() {
+    local candidate
+    for candidate in .venv/bin/python .venv/Scripts/python.exe; do
+        if [ -x "$candidate" ]; then echo "$candidate"; return 0; fi
+    done
+    return 1
+}
+
 # ── 1) .venv 생성 (이미 있으면 건너뜀) ──────────────────────────────────
-if [ -x ".venv/bin/python" ]; then
+if find_venv_python >/dev/null; then
     echo ".venv가 이미 있습니다. 생성은 건너뛰고 설치만 다시 확인합니다."
 elif command -v uv >/dev/null 2>&1; then
     echo "uv venv --python $PY_VERSION 로 가상환경을 만듭니다..."
@@ -30,22 +39,25 @@ else
     "python$PY_VERSION" -m venv .venv
 fi
 
-.venv/bin/python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' \
+VENV_PY="$(find_venv_python)" \
+    || { echo "ERROR: .venv에서 python을 찾지 못했습니다."; exit 1; }
+
+"$VENV_PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' \
     || { echo "ERROR: .venv의 Python이 3.11 미만입니다. .venv를 지우고 다시 실행하세요."; exit 1; }
 
 # ── 2) 의존성 설치 ─────────────────────────────────────────────────────
 echo "requirements.txt 설치 중..."
 if command -v uv >/dev/null 2>&1; then
-    uv pip install --python .venv/bin/python -r requirements.txt
+    uv pip install --python "$VENV_PY" -r requirements.txt
 else
-    .venv/bin/python -m pip install --upgrade pip --quiet
-    .venv/bin/python -m pip install -r requirements.txt
+    "$VENV_PY" -m pip install --upgrade pip --quiet
+    "$VENV_PY" -m pip install -r requirements.txt
 fi
 
 # ── 3) 설치 확인 ───────────────────────────────────────────────────────
 echo
 echo "설치 확인:"
-.venv/bin/python - <<'PY'
+"$VENV_PY" - <<'PY'
 from importlib.metadata import version
 
 for pkg in ("pydantic", "pydantic-settings", "python-dotenv", "langchain-core",
@@ -60,7 +72,7 @@ cat <<EOF
 ################################################################
 
 다음 순서로 진행합니다:
-  .venv/bin/python -m pytest -q          테스트 (실제 LLM 호출 제외)
+  $VENV_PY -m pytest -q          테스트 (실제 LLM 호출 제외)
   bash sh/setup_ollama.sh                Ollama 모델 받기 (qwen3:8b, qwen3:0.6b, bge-m3)
   LLM_PROVIDER=ollama bash sh/run_api.sh API 실행 (7단계부터)
 EOF
