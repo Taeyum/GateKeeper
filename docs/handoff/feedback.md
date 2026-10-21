@@ -166,3 +166,22 @@
 
 ### K5. explanation은 쉬운 한국어로 (권장)
 - 화면(feat/web)은 `Recommendation.explanation`을 승인자 화면 "시스템 설명"에 그대로 보여 준다. decide 프롬프트가 규정 번호와 영어 약어 없이 "~해요"체 두세 문장으로 쓰게 한다(규정 번호는 화면이 citations로 따로 보여 준다). 평가 지표(Judge는 대안만 본다)에는 영향이 없으니 v1 dev 측정 전에 바꿔도 된다.
+
+## v1 dev 첫 측정 중간 리뷰 (results/20261021-173455_v1_dev.jsonl, 8건 시점)
+
+v1이 v0보다 나은 점이 아직 안 보인다. 원인은 엔진이 아니라 parse_request 입력이다(라벨 structured를 넣은 test_graph_v1은 10/10). v0 기준선은 그대로 두고, v1 프롬프트는 dev로 고쳐도 된다(EVAL 2장: 튜닝은 dev로).
+
+### N1. REQ-D01, REQ-D07이 ReviewIncomplete (필수, D01은 시연 문장)
+- 두 건 다 LLM 호출 2회 뒤 ReviewIncomplete다. 대상 확인 재시도(대상이 CMDB에 없음 2회)이거나 policy unavailable로 보인다. jsonl에는 예외 타입만 남아서 원인을 알 수 없다.
+- 반영: dev split에서는 ReviewIncomplete의 사유(어느 단계, 대상 값 등 본문 없는 짧은 문장)를 jsonl에 남긴다(eval split은 지금처럼 타입만). 그 사유로 원인을 찾아 고친다. 의심: LLM이 target에 CMDB id 대신 이름("결제 DB")이나 덧붙인 말("payments-db 방화벽")을 넣었을 가능성.
+
+### N2. parse_request가 변경 유형을 틀린다 (필수)
+- D02(방화벽 → db_change, 종료를 허용 기한 2주 뒤로 잡음), D05(방화벽 → deploy), D04(표준 변경 → deploy). v0은 change_type 10/10이었다. v0 프롬프트에는 규정 원문 전체가 있어 유형 정의를 보지만, v1 parse_request 프롬프트에는 유형 정의가 없다.
+- 반영: parse_request 프롬프트에 change_policy.md의 유형별 필수 항목(4장)과 표준 변경 목록(3장)을 파일에서 읽어 넣는다(하드코딩 금지). "허용 기한(기간)은 expires_days이고 작업 구간(end)이 아니다"도 명시한다.
+
+### N3. STD-01의 extra_changes (필수)
+- D04 정답은 extra_changes = [](다른 변경 없음)인데, 구조화 규칙은 "언급이 있을 때만"이라 LLM이 null을 낸다. 엔진은 null이면 표준으로 확정하지 않아(fail-safe) 표준 변경이 항상 배포로 간다.
+- 반영: structure_rules.md(v0과 공유, 고정)는 그대로 두고 v1 전용 parse_request.md에 "로그 레벨만 바꾸는 요청에서 다른 설정 변경이 언급되지 않으면 extra_changes는 빈 목록"을 더한다. 엔진의 null 처리는 바꾸지 않는다.
+
+### 다시 측정
+- N1~N3 반영 후 v1 dev를 다시 돈다. 첫 측정 summary는 지우지 않고 남겨서 보고서에 "1차 → 수정 → 2차"로 적는다(발표의 개선 과정 자료).
