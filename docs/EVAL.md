@@ -25,6 +25,7 @@
 - v1의 parse_request는 필수 항목(작업 시각, 대상)이 비거나 작업 구간의 종료가 시작보다 늦지 않으면 1회 다시 묻고, 프롬프트에 규정의 유형별 필수 항목과 표준 변경 목록을 읽어 넣는다. v0에는 없는 구조적 장치이고 공정성 문제가 아니라 개선 내용이다(보고서에 "v1이 더한 것"으로 적는다). 단, 구조화 규칙(`structure_rules.md`)은 두 버전이 같다.
 - v1 프롬프트는 dev로 고쳐도 되고, 고치면 "1차 측정 → 수정 → 2차 측정"을 보고서에 함께 적는다. 1차 summary는 지우지 않는다(발표의 개선 과정 자료). 리포트(`report.md`)는 버전마다 최신 summary만 쓰므로 1차 수치는 보고서 본문에 옮겨 둔다.
 - v0은 이력(history)을 받지 않는다. 이력은 v2의 RAG가 더하는 정보라서, 위험도 상향과 RAG 재현율은 v2에서만 생긴다.
+- v2가 더한 것(보고서에 "v2가 더한 것"으로 적는다): 이력 RAG(임베딩 `bge-m3`는 provider와 상관없이 로컬 Ollama, CPU)와 Validator다. 위험도 상향은 코드가 이력 전체에서 "같은 서비스 + 같은 유형 + 장애"를 정확히 판단해 정하고(결정론), 사례 제시는 정확 일치 먼저 의미 검색으로 채우는 하이브리드다. Validator의 LLM 검사는 main 모델로 하고 `MODEL_JUDGE`는 쓰지 않는다(Judge는 대안 품질 평가 전용이다). v2의 decide 프롬프트 변경은 v2 경로에만 붙는 조각 파일이라 v1 측정은 그대로 유효하다. `run_eval`은 v2일 때 색인과 임베딩이 준비됐는지 먼저 확인하고 아니면 LLM을 부르기 전에 멈춘다(`bash sh/build_index.sh`).
 - 첫 요청 1건은 그래프로 한 번 실행하고 버린다(warm-up). 모델 로드와 정적 프롬프트 접두사 캐시를 함께 데워서 p95가 첫 요청의 캐시 미스를 재지 않게 한다. 모든 버전에 같은 방식이고, 결과는 기록하지도 출력하지도 않는다.
 - 요청은 순서대로 한 건씩 실행한다(동시 실행은 지연 측정을 오염시킨다). 시간 제한을 넘기거나 예외가 나면 오류로 기록하고 모든 지표에서 오답으로 센다.
 - `run_eval`은 시작 전에 provider와 모델 이름이 맞는지 검사한다(ollama인데 `claude-`/`gpt-`, anthropic인데 `claude-`가 아님, openai인데 `gpt-`가 아님이면 LLM을 부르기 전에 멈춤). `.env`의 MODEL_*가 다른 provider용이면 `--provider`를 바꿔도 그대로 적용되기 때문이다.
@@ -44,7 +45,7 @@
 | 품질 | 판정-위반 자기모순 | pred 위반 목록의 구분(rules.json의 금지/보완)으로 규정 1장 판정을 다시 계산했을 때 pred 판정과 다른 실행의 비율(낮을수록 좋음). 금지 위반이 있으면 반려, 보완만 있으면 조건부 승인, 위반이 없으면 pred 판정이 "자동 승인"일 때만 자동 승인이고 아니면 승인으로 본다. pred가 스스로 단 severity는 보지 않고, 평가기 독립 원칙대로 `rules_engine`이 아니라 rules.json만 읽는다. 규정에 구분이 없는 ID(STD, 지어낸 ID)와 CHG-07은 계산에서 뺀다. 오류 난 실행은 정의할 수 없어 분모에서 뺀다(`self_contradiction_n`). v1, v2는 판정을 코드가 위반 목록에서 계산하므로 구조적으로 0이다 | 전체 |
 | 품질 | 위험도 일치율 | `pred.risk == gold.risk` (gold가 null인 표준 변경 제외) | 전체 |
 | 품질 | 긴급 판정 정확도 | gold `is_emergency`가 true인 요청에서 `emergency_valid` 일치 (dev는 REQ-D07 1건) | 전체 |
-| 품질 | RAG 재현율@3 | gold `similar_history`가 비어 있지 않은 요청에서 검색 상위 3건이 gold를 몇 % 포함하는지(요청별 평균). 최종 `similar_history`는 필터를 거친 값이라 검색 결과(상태의 `history` 원본)로 계산한다 | v2 |
+| 품질 | RAG 재현율@3 | gold `similar_history`가 비어 있지 않은 요청에서 검색 상위 3건이 gold를 몇 % 포함하는지(요청별 평균). 검색 결과는 history_agent의 하이브리드 결과(정확 일치를 먼저, 남는 자리를 의미 검색으로 채운 상위 3건, 상태의 `similar_incidents`)다. dev 정답이 모두 "같은 서비스 + 같은 유형 + 장애" 건이라 이 지표는 정확 일치 단계가 만드는 값에 가깝고 구조상 높다. 그래서 순수 의미 검색 상위 3건의 재현율을 진단 값(dev 기록의 `semantic_ids`)으로 따로 계산해 보고서에 적고, 지표와 섞지 않는다 | v2 |
 | 품질 | 대안 품질 | gold 판정이 반려/조건부인 요청에서 LLM-as-Judge 1~5점. 기준: 위반을 해소하는가 / 새 위반을 만들지 않는가 / 구체적인가. Judge 프롬프트는 `eval/judge_prompt.md`, 모델은 `MODEL_JUDGE` 고정. 시스템이 대안을 내지 않았으면 호출 없이 1점. Judge에는 규정, CMDB, 변경 캘린더, 장애 티켓을 줘서 새 위반을 직접 확인하게 한다. Judge 모델이 시스템(main) 모델과 같으면(ollama 기본) 비독립 평가라 summary와 리포트에 표시하고 추세용으로만 쓴다 | 전체 |
 | 비용 | 지연시간 평균 / p95 | 요청 1건 그래프 실행 wall-clock (초). p95는 nearest-rank라 실행이 10건이면 최댓값과 같다 | 전체 |
 | 비용 | 토큰 (입력 / 출력), LLM 호출 수 | `UsageCollector` 콜백 집계(모델별). 출력 토큰에는 reasoning(thinking) 토큰이 포함되고 `reasoning_tokens`로 따로 남는다. Judge 호출은 시스템 비용에 섞지 않고 `judge_usage`로 따로 센다 | 전체 |
@@ -64,6 +65,8 @@ python eval/upload_dataset.py --split eval
 python eval/run_eval.py --version v1 --split dev --reps 1 --provider anthropic
 # 모델 축 (1장): MODEL_MAIN만 바꿔 같은 버전을 다시 잰다. report가 main 모델별로 절을 나눠 보인다.
 MODEL_MAIN=claude-haiku-5-5 python eval/run_eval.py --version v0 --split dev --reps 1 --provider anthropic
+# v2는 먼저 RAG 색인을 만든다 (임베딩 bge-m3, 로컬 Ollama). 이력이나 임베딩 모델을 바꾸면 다시 만든다.
+bash sh/build_index.sh
 # 로컬 모델 축 (1장): 외부 API 없이 ollama로, Judge 없이 잰다. num_ctx를 낮춰 4b를 전부 GPU에 올린다.
 OLLAMA_NUM_CTX=10240 MODEL_MAIN=qwen3:4b MODEL_SMALL=qwen3:0.6b python eval/run_eval.py --version v0 --split dev --reps 1 --provider ollama --no-judge
 

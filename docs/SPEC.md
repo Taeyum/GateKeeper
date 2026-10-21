@@ -23,6 +23,7 @@
 | `policy`, `impact`, `history` | `SubagentResult` | ③ 결과. `tool_output`(원본), `summary`(LLM 요약), `notes`(조항별 설명, policy만), `status`(`ok`/`unavailable`) |
 | `recommendation` | `Recommendation` | ④ 결과 |
 | `alternative` | `AlternativePlan` | ④ 결과. 대안 문장을 조립하기 전의 구성 요소(검증을 통과한 시작/종료, 조건 목록, 엔진 대체 여부). 7단계 API가 `alternative_diff`를 코드로 계산할 때 쓴다 |
+| `similar_incidents`, `has_similar_incident` | list, bool | ③ history_agent 결과(v2). 정확 일치를 먼저 둔 상위 3건(`history.json` 원래 키)과, 이력 전체에서 코드가 정한 "같은 서비스 + 같은 유형 + 장애" 여부(위험도 상향 근거). v0, v1과 이력 검색이 실패한 경우에는 없다 |
 | `warnings` | list | 승인자에게 보여 줄 경고. 노드마다 더하고 decide가 `Recommendation.warnings`로 옮긴다 |
 | `validation` | `{passed, reasons, rewrites}` | ⑤ 결과 |
 | `approval` | `{decision, approver, comment, at}` | ⑥ 결과 |
@@ -48,9 +49,9 @@
 | ② classify | 경로 결정 | 엔진이 표준 변경 여부(STD-01/02 조건)와 긴급 유효성(티켓 조회)을 확정하고, 작은 모델은 본문만 보고 유형과 긴급 여부를 따로 분류해 parse 결과를 점검한다. 표준/긴급 여부가 다르거나 호출이 실패하면 route만 general로 돌리고(fail-safe) 엔진 확정값과 판정은 그대로 둔다. 불일치는 `warnings`에 남기고, 7단계 approval_gate는 route가 standard일 때만 자동 승인을 실행한다 |
 | ③ policy_agent | 규정 검사 | 자기 상태를 가진 컴파일된 서브그래프(`check_policy` → `read_rules` → `write_notes`). MCP `check_policy` 결과가 위반의 원본이고 `violations[].evidence`는 엔진 문장 그대로다. LLM은 `rules://CHG-xx` 원문을 읽고 조항별 쉬운 설명(`notes`)과 요약만 쓴다. 엔진 결과에 없는 조항 ID는 버린다. Tool 호출은 코드가 정한다 |
 | ③ impact_agent | 영향도 | 컴파일된 서브그래프(`lookup` → `summarize`). MCP `get_service_info`, `get_calendar`로 등급, 의존 서비스, 같은 시간대 변경을 조회해 요약. 작업 시각이 없으면 캘린더는 생략. 조회가 실패하면 "확인 불가" |
-| ③ history_agent | 이력 검토 (v2) | MCP `search_history`로 상위 3건 검색 후 요약. 같은 서비스 + 같은 유형 + 장애가 있으면 `history.bump = true` |
-| ④ decide | 판정과 설명 | 판정(`verdict_from`), 위험도(`risk_from`, 이력 상향은 v2), 인용 조항(위반 조항 + 유효한 긴급이면 CHG-07 + 표준이면 STD id)은 코드가 계산한다. LLM은 설명, 조건 목록, 대안 일정 제안만 쓴다. 시간 조항(CHG-01, 05, 06, 10) 위반이 있으면 일정 대안이 필요하고, LLM이 낸 일정을 `check_window`로 다시 검사해 위반이거나 요청 시각 이전이거나 없으면 위반 근거를 알려 1회 재생성, 그래도 안 되면 `next_valid_window`가 찾은 가장 빠른 통과 시간대로 대체한다. 시작 시각이 없으면 확인하지 못한 시간 조항을 코드가 계산해 경고와 설명에 붙이고 판정은 엔진 값 그대로다(자동 승인은 나오지 않는다). 규정 검사를 못 얻었으면 `ReviewIncomplete`(`stage`와 `detail`에 하위 오류 종류와 구조화된 작업 구간을 단다. 평가 하네스가 dev 기록에만 남긴다). 설명은 승인자 화면에 그대로 보이므로 규정 번호와 영어 약어 없이 "~해요"체 두세 문장으로 쓰게 한다(규정 번호는 `citations`로 따로 보인다). 설명 LLM이 실패하면 엔진 근거 문장으로 만든 설명으로 대신한다 |
-| ⑤ validate | 근거 검증 (v2) | 코드: 인용한 rule_id가 존재하고 `violations`에 포함되는지. LLM Judge: 설명이 위반 목록과 모순되지 않는지. 실패 시 ④로 1회 재작성, 두 번째 실패면 `warnings`에 "근거 검증 미완료"를 붙여 진행 |
+| ③ history_agent | 이력 검토 (v2) | policy/impact와 같은 모양의 컴파일된 서브그래프(`search` → `summarize`). 같은 질의(구조화 필드로 조립한 문장)로 MCP `search_history`를 두 번 동시에 부른다: (A) 서비스, 실효 유형, outcome 장애로 거른 정확 일치, (B) 필터 없는 의미 검색 상위 3건. `has_similar_incident`는 A가 한 건이라도 있는지로, 코드가 이력 전체에서 정한다(조건이 순위 전에 적용되므로 의미 검색 순위에 좌우되지 않는다). `similar_incidents`는 A를 먼저(유사도 순), 남는 자리를 B로 중복 없이 채운 상위 3건이고 `docs/API_CONTRACT.md`의 모양(`history.json` 원래 키)으로 상태에 남긴다. 상향은 결정론, 사례 제시는 하이브리드 검색이다. 정확 일치 검색이 실패하면 `unavailable`로 두고 이력 상향 없이 진행한다. 판정은 바꾸지 않는다 |
+| ④ decide | 판정과 설명 | 판정(`verdict_from`), 위험도(`risk_from`, v2에서는 history_agent가 이력 전체에서 코드로 정한 `has_similar_incident`로 한 단계 올린다. 판정은 바뀌지 않는다), 인용 조항(위반 조항 + 유효한 긴급이면 CHG-07 + 표준이면 STD id)은 코드가 계산한다. LLM은 설명, 조건 목록, 대안 일정 제안만 쓴다. 시간 조항(CHG-01, 05, 06, 10) 위반이 있으면 일정 대안이 필요하고, LLM이 낸 일정을 `check_window`로 다시 검사해 위반이거나 요청 시각 이전이거나 없으면 위반 근거를 알려 1회 재생성, 그래도 안 되면 `next_valid_window`가 찾은 가장 빠른 통과 시간대로 대체한다. 시작 시각이 없으면 확인하지 못한 시간 조항을 코드가 계산해 경고와 설명에 붙이고 판정은 엔진 값 그대로다(자동 승인은 나오지 않는다). 규정 검사를 못 얻었으면 `ReviewIncomplete`(`stage`와 `detail`에 하위 오류 종류와 구조화된 작업 구간을 단다. 평가 하네스가 dev 기록에만 남긴다). 설명은 승인자 화면에 그대로 보이므로 규정 번호와 영어 약어 없이 "~해요"체 두세 문장으로 쓰게 한다(규정 번호는 `citations`로 따로 보인다). 설명 LLM이 실패하면 엔진 근거 문장으로 만든 설명으로 대신한다 |
+| ⑤ validate | 근거 검증 (v2) | 코드 검사: 권고의 위반 목록과 판정이 규정 검사 결과와 같은지, 인용한 rule_id가 규정/표준 목록에 있고 "위반 + (유효한 긴급이면 CHG-07) + 표준 id"와 같은지, 설명과 대안 문장이 언급한 조항 번호가 위반/면제/인용에 있는지. LLM 검사: 설명이 위반 목록과 판정에 모순되지 않는지를 **main 모델**로 본다(`MODEL_JUDGE`는 평가 전용이라 쓰지 않는다). 코드 검사에서 실패하면 LLM 호출 없이 실패다. 실패 시 사유를 들고 ④로 1회 재작성(decide는 사유와 앞선 설명을 받아 설명과 조건만 고친다), 두 번째 실패면 `warnings`에 "근거 검증 미완료"를 붙여 진행한다. LLM 호출이 실패하면 막지 않고 경고와 `errors`에 남긴다. 표준 변경 경로에서도 돈다 |
 | ⑥ approval_gate | 사람 승인 | 표준 변경이고 위반이 없으면 자동 승인. 아니면 `interrupt()`로 멈추고 승인자 결정을 기다린다. 평가 모드에서는 여기서 멈춘 상태의 `recommendation`이 측정 대상 |
 | ⑦ finalize | 확정 | trace_id가 담긴 감사 로그 JSON Lines 기록, 긴급이면 사후 보고 대상 표시 |
 
@@ -76,7 +77,7 @@
 |---|---|---|
 | v0 | LLM 노드 하나. 규정 원문 + CMDB + 변경 캘린더 + 장애 티켓 + 요청을 프롬프트에 넣고 `structured`와 `Recommendation`을 한 번에 출력 | 정보는 v1, v2와 같고 구조만 다르다. 출력 스키마가 같아 평가 코드도 같다. 과거 이력(history)은 주지 않는다. 이력은 v2의 RAG가 더하는 정보라서 위험도 상향과 `similar_history`는 v2에서만 생긴다. 출력은 규칙 엔진으로 보정하지 않는다(판정은 코드가 정한다는 원칙의 유일한 예외인 기준선) |
 | v1 | ① ② ③(policy, impact) ④ (⑥ ⑦은 7단계) | RAG와 Validator 없음. 5단계 그래프는 ④ decide에서 끝나고 측정 지점(⑥ 직전)과 같다 |
-| v2 | 전체 | |
+| v2 | v1 + ③ history_agent(이력 RAG, 위험도 상향) + ⑤ validate(근거 검증, 재작성 1회) | 측정 지점은 validate 뒤(⑥ 직전). 이력은 판정을 바꾸지 않는다. v1의 decide 프롬프트와 입력은 그대로이고 이력 지시는 `decide_history.md` 조각으로 v2 경로에만 붙는다 |
 
 ## 5. MCP 서버 (FastMCP, stdio)
 
@@ -88,13 +89,15 @@
 | Tool | `get_service_info` | service_id → 등급, 담당 팀, 의존/피의존 서비스, 기본 포트 |
 | Tool | `get_calendar` | target, start, end → 겹치는 동결 기간과 예정 변경 |
 | Tool | `get_incident` | ticket → 상태, 대상 서비스 |
-| Tool | `search_history` (v2) | query, k=3 → 이력 상위 k건 (id, 점수, service, change_type, outcome, 요약) |
+| Tool | `search_history` (v2) | query, k=3, service/change_type/outcome(선택) → 이력 상위 k건을 점수 순으로 (점수 + `history.json` 항목의 원래 키). 필터를 주면 그 조건의 이력만 대상으로 순위를 매긴다 |
 
 - 결정론 로직은 `rules_engine` 패키지의 순수 함수이고, MCP Tool은 그 함수를 감싸기만 한다. 단위 테스트는 패키지 함수에 건다.
 - Resource는 템플릿이 아니라 12개를 개별 URI로 등록한다(`list_resources`에 나오도록). 규정 원문은 `change_policy.md`를 읽어 파싱한 결과다. `check_window`는 `{violations: [...]}`로 응답한다.
 - 없는 서비스/티켓/대상 조회는 빈 결과가 아니라 `ToolError("NOT_FOUND: ...")`, 인자 오류는 `INVALID_ARGUMENT`다. `check_policy`/`check_window`도 같다. 엔진을 부르기 전에 target을 CMDB에서 찾아 없으면 `NOT_FOUND`, 그 뒤 엔진의 `ValueError`(작업 구간 오류 등)는 `INVALID_ARGUMENT`로 바꾼다. 클라이언트(`app/agent/mcp_client.py`)는 NOT_FOUND를 `MCPNotFoundError`로 구분하고 재시도하지 않는다. 시간 초과와 연결 오류만 지수 백오프로 최대 2회 재시도한다.
-- `search_history`는 서비스/유형 메타데이터로 미리 거르지 않는다. 의미 검색 결과를 그대로 상위 3건 돌려줘야 RAG 재현율이 의미 있다.
-- 임베딩은 Ollama `bge-m3`(없으면 `nomic-embed-text`)로 로컬 고정, Vector DB는 로컬 영속형(Chroma 등) 하나. 색인은 `scripts/build_index.py`로 한 번 만든다.
+- `search_history`의 기본 호출은 서비스/유형 메타데이터로 미리 거르지 않는다. 의미 검색 결과를 그대로 상위 k건 돌려준다. 선택 인자(`service`, `change_type`, `outcome`)를 주면 그 조건에 맞는 이력만 대상으로 유사도 순 상위 k건을 돌려준다. history_agent가 "같은 서비스 + 같은 유형 + 장애"를 이력 전체에서 정확히 찾는 데 쓴다. k는 1~10, 색인이 없거나 오래됐으면 `INDEX_NOT_READY`, 인자 오류는 `INVALID_ARGUMENT`다(둘 다 재시도하지 않는다). 색인은 첫 호출 때 열어서 다른 Tool은 색인이나 Ollama 없이 동작한다.
+- 임베딩은 Ollama `bge-m3`로 로컬 고정이고 CPU(`num_gpu=0`)로 돌린다. VRAM이 작은 머신에서 LLM과 임베딩 모델이 GPU를 두고 서로를 내리고 올리는 것을 피하려는 것이다. 테스트와 fake provider는 결정론 `FakeEmbedder`를 쓴다.
+- 벡터 저장소는 `VectorStore` 인터페이스(`add`, `search(vector, k, where)`, `clear`, `count`) 뒤에 두고 구현은 numpy 평면 색인(`.data/rag/history/`) 하나다. 저장소는 `app/rag/__init__.py`의 `default_store()` 한 곳에서 주입하므로 Chroma나 pgvector로 바꿀 때는 클래스 하나를 만들고 그곳만 고치면 된다. 이유: 100건은 전수 코사인 검색이 근사 오차 0이고 의존성이 없다. 수만 건 이상이면 ANN 저장소로 교체한다. `where`는 순위를 매기기 전에 적용한다.
+- 색인은 `sh/build_index.sh`(= `scripts/build_index.py`)로 만든다. 항상 처음부터 다시 만들고(100건, 수 초), 옆의 `meta.json`에 임베딩 모델, `history.json` 해시, 건수를 남겨서 모델이나 이력이 바뀌었는데 다시 만들지 않았으면 조용히 엉뚱한 결과를 내지 않고 멈춘다.
 
 ## 6. API (FastAPI)
 
@@ -148,7 +151,7 @@ app/
   data_loader.py           gatekeeper_data 로더
   rules_engine/            규칙 엔진 (순수 함수, 조항별 모듈)
   mcp_server/server.py     FastMCP 서버
-  rag/                     색인과 검색
+  rag/                     이력 색인과 검색 (store.py: VectorStore 인터페이스와 numpy 구현, embeddings.py: Ollama/Fake 임베딩, index.py: 색인과 검색, meta.json으로 오래된 색인 감지)
   agent/
     state.py
     graph.py               GK_VERSION에 따라 그래프 조립
@@ -174,5 +177,5 @@ results/                   summary.json, report.md, charts/ (jsonl은 git 제외
 scripts/build_index.py
 tests/
 web/                       Vue 3 + Vite 화면
-sh/                        setup_venv.sh, setup_ollama.sh, run_api.sh, run_web.sh
+sh/                        setup_venv.sh, setup_ollama.sh, build_index.sh (RAG 색인 다시 만들기), run_api.sh, run_web.sh
 ```
