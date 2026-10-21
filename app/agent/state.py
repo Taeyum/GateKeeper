@@ -6,7 +6,7 @@ approval은 쓰는 노드가 생길 때 더한다. errors와 metrics에 reducer�
 """
 
 import operator
-from typing import Annotated
+from typing import Annotated, Any
 
 from typing_extensions import TypedDict
 
@@ -39,6 +39,12 @@ class GKState(TypedDict, total=False):
     # ③ 서브에이전트 결과. 각자 컴파일된 서브그래프이고 자기 상태를 가진다(nodes/policy_agent.py, impact_agent.py).
     policy: SubagentResult
     impact: SubagentResult
+    # history_agent는 v2에서만 돈다. similar_incidents는 docs/API_CONTRACT.md의 모양(history.json 원래 키)이고
+    # 정확 일치를 먼저 둔 상위 3건이다. has_similar_incident는 코드가 이력 전체에서 "같은 서비스 + 같은 유형 + 장애"로
+    # 정한 값이며 위험도를 한 단계 올리는 근거다. v0, v1과 이력 검색이 실패한 경우에는 없다(없으면 False로 본다).
+    history: SubagentResult
+    similar_incidents: list[dict[str, Any]]
+    has_similar_incident: bool
     recommendation: Recommendation
     # ④ decide가 대안 문장을 조립하기 전의 구성 요소 (7단계 API의 alternative_diff 계산용)
     alternative: AlternativePlan

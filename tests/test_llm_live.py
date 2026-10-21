@@ -126,6 +126,7 @@ async def test_Judge가_정수_범위_제약이_있는_스키마로_점수를_�
 def _anthropic_schemas() -> dict:
     from app.agent.nodes.classify import RouteGuess
     from app.agent.nodes.decide import DecideDraft
+    from app.agent.nodes.history_agent import HistoryNote
     from app.agent.nodes.impact_agent import ImpactNote
     from app.agent.nodes.policy_agent import PolicyNotes
     from app.agent.wire import V0Wire, WireChangeRequest
@@ -133,13 +134,14 @@ def _anthropic_schemas() -> dict:
 
     return {
         "WireChangeRequest": WireChangeRequest, "Recommendation": Recommendation, "V0Wire": V0Wire,
-        "RouteGuess": RouteGuess, "PolicyNotes": PolicyNotes, "ImpactNote": ImpactNote, "DecideDraft": DecideDraft,
+        "RouteGuess": RouteGuess, "PolicyNotes": PolicyNotes, "ImpactNote": ImpactNote, "HistoryNote": HistoryNote,
+        "DecideDraft": DecideDraft,
     }  # fmt: skip
 
 
 @pytest.mark.parametrize(
     "schema_name",
-    ["WireChangeRequest", "Recommendation", "V0Wire", "RouteGuess", "PolicyNotes", "ImpactNote", "DecideDraft"],
+    ["WireChangeRequest", "Recommendation", "V0Wire", "RouteGuess", "PolicyNotes", "ImpactNote", "HistoryNote", "DecideDraft"],
 )
 def test_anthropic이_직접_보내는_스키마를_받아들인다(schema_name):
     """anthropic으로 직접 보내는 스키마가 실제 API에서 400 'Schema is too complex' 없이 통과해야 한다 (리뷰 J2).
