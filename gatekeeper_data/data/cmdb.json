@@ -1,0 +1,302 @@
+{
+  "updated_at": "2026-10-21",
+  "internal_cidr": "10.0.0.0/8",
+  "services": [
+    {
+      "id": "web-01",
+      "name": "웹 프론트 1호기",
+      "type": "web",
+      "tier": "Tier-2",
+      "owner_team": "웹플랫폼팀",
+      "zone": "dmz",
+      "host": "10.10.1.11",
+      "ports": [
+        443,
+        8443
+      ],
+      "depends_on": [
+        "gateway-service"
+      ],
+      "dependents": []
+    },
+    {
+      "id": "web-02",
+      "name": "웹 프론트 2호기",
+      "type": "web",
+      "tier": "Tier-2",
+      "owner_team": "웹플랫폼팀",
+      "zone": "dmz",
+      "host": "10.10.1.12",
+      "ports": [
+        443,
+        8443
+      ],
+      "depends_on": [
+        "gateway-service"
+      ],
+      "dependents": []
+    },
+    {
+      "id": "gateway-service",
+      "name": "API 게이트웨이",
+      "type": "service",
+      "tier": "Tier-1",
+      "owner_team": "플랫폼팀",
+      "zone": "internal",
+      "host": "10.20.1.10",
+      "ports": [
+        8080
+      ],
+      "depends_on": [
+        "auth-service",
+        "payments-service",
+        "order-service",
+        "search-service"
+      ],
+      "dependents": [
+        "web-01",
+        "web-02"
+      ]
+    },
+    {
+      "id": "auth-service",
+      "name": "인증 서비스",
+      "type": "service",
+      "tier": "Tier-1",
+      "owner_team": "계정팀",
+      "zone": "internal",
+      "host": "10.20.2.10",
+      "ports": [
+        8081
+      ],
+      "depends_on": [
+        "auth-db",
+        "cache-service"
+      ],
+      "dependents": [
+        "admin-portal",
+        "gateway-service"
+      ]
+    },
+    {
+      "id": "auth-db",
+      "name": "인증 DB (PostgreSQL)",
+      "type": "db",
+      "tier": "Tier-1",
+      "owner_team": "DBA팀",
+      "zone": "data",
+      "host": "10.40.1.10",
+      "ports": [
+        5432
+      ],
+      "depends_on": [],
+      "dependents": [
+        "auth-service"
+      ]
+    },
+    {
+      "id": "payments-service",
+      "name": "결제 서비스",
+      "type": "service",
+      "tier": "Tier-1",
+      "owner_team": "결제플랫폼팀",
+      "zone": "internal",
+      "host": "10.20.3.10",
+      "ports": [
+        8082
+      ],
+      "depends_on": [
+        "payments-db",
+        "cache-service"
+      ],
+      "dependents": [
+        "billing-service",
+        "gateway-service",
+        "order-service"
+      ]
+    },
+    {
+      "id": "payments-db",
+      "name": "결제 DB (PostgreSQL)",
+      "type": "db",
+      "tier": "Tier-1",
+      "owner_team": "DBA팀",
+      "zone": "data",
+      "host": "10.40.2.10",
+      "ports": [
+        5432
+      ],
+      "depends_on": [],
+      "dependents": [
+        "batch-settlement",
+        "payments-service"
+      ]
+    },
+    {
+      "id": "cache-service",
+      "name": "공용 캐시 (Redis)",
+      "type": "cache",
+      "tier": "Tier-1",
+      "owner_team": "플랫폼팀",
+      "zone": "data",
+      "host": "10.40.5.10",
+      "ports": [
+        6379
+      ],
+      "depends_on": [],
+      "dependents": [
+        "auth-service",
+        "payments-service"
+      ]
+    },
+    {
+      "id": "billing-service",
+      "name": "청구 서비스",
+      "type": "service",
+      "tier": "Tier-2",
+      "owner_team": "정산팀",
+      "zone": "internal",
+      "host": "10.20.4.10",
+      "ports": [
+        8083
+      ],
+      "depends_on": [
+        "billing-db",
+        "payments-service"
+      ],
+      "dependents": []
+    },
+    {
+      "id": "billing-db",
+      "name": "청구 DB (MySQL)",
+      "type": "db",
+      "tier": "Tier-2",
+      "owner_team": "DBA팀",
+      "zone": "data",
+      "host": "10.40.3.10",
+      "ports": [
+        3306
+      ],
+      "depends_on": [],
+      "dependents": [
+        "batch-settlement",
+        "billing-service"
+      ]
+    },
+    {
+      "id": "order-service",
+      "name": "주문 서비스",
+      "type": "service",
+      "tier": "Tier-2",
+      "owner_team": "커머스팀",
+      "zone": "internal",
+      "host": "10.20.5.10",
+      "ports": [
+        8080
+      ],
+      "depends_on": [
+        "order-db",
+        "payments-service"
+      ],
+      "dependents": [
+        "admin-portal",
+        "gateway-service"
+      ]
+    },
+    {
+      "id": "order-db",
+      "name": "주문 DB (MySQL)",
+      "type": "db",
+      "tier": "Tier-2",
+      "owner_team": "DBA팀",
+      "zone": "data",
+      "host": "10.40.4.10",
+      "ports": [
+        3306
+      ],
+      "depends_on": [],
+      "dependents": [
+        "order-service"
+      ]
+    },
+    {
+      "id": "batch-settlement",
+      "name": "정산 배치",
+      "type": "batch",
+      "tier": "Tier-2",
+      "owner_team": "정산팀",
+      "zone": "internal",
+      "host": "10.30.1.20",
+      "ports": [],
+      "depends_on": [
+        "payments-db",
+        "billing-db"
+      ],
+      "dependents": []
+    },
+    {
+      "id": "search-service",
+      "name": "상품 검색",
+      "type": "service",
+      "tier": "Tier-3",
+      "owner_team": "커머스팀",
+      "zone": "internal",
+      "host": "10.20.6.10",
+      "ports": [
+        9200
+      ],
+      "depends_on": [],
+      "dependents": [
+        "gateway-service"
+      ]
+    },
+    {
+      "id": "notification-service",
+      "name": "알림 발송",
+      "type": "service",
+      "tier": "Tier-3",
+      "owner_team": "커머스팀",
+      "zone": "internal",
+      "host": "10.20.7.10",
+      "ports": [
+        8084
+      ],
+      "depends_on": [],
+      "dependents": []
+    },
+    {
+      "id": "admin-portal",
+      "name": "사내 관리자 포털",
+      "type": "service",
+      "tier": "Tier-3",
+      "owner_team": "운영지원팀",
+      "zone": "internal",
+      "host": "10.30.2.15",
+      "ports": [
+        8443
+      ],
+      "depends_on": [
+        "auth-service",
+        "order-service"
+      ],
+      "dependents": []
+    }
+  ],
+  "partners": [
+    {
+      "partner": "B페이먼츠",
+      "ip": "203.0.113.10/32",
+      "purpose": "결제 대사 연동"
+    },
+    {
+      "partner": "C정산",
+      "ip": "198.51.100.24/32",
+      "purpose": "정산 데이터 연동"
+    },
+    {
+      "partner": "D커머스",
+      "ip": "192.0.2.55/32",
+      "purpose": "가맹점 결제 내역 조회"
+    }
+  ]
+}

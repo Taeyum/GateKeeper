@@ -1,0 +1,215 @@
+{
+  "version": "2026-10-21",
+  "source_of_truth": "rules/change_policy.md",
+  "defaults": {
+    "timezone": "Asia/Seoul",
+    "internal_cidr": "10.0.0.0/8",
+    "work_duration_minutes_if_missing": 60
+  },
+  "verdict_by_severity": {
+    "forbidden": "반려",
+    "fixable": "조건부 승인",
+    "none_general": "승인",
+    "none_standard": "자동 승인"
+  },
+  "rules": [
+    {
+      "rule_id": "CHG-01",
+      "title": "배포 금지 시간대",
+      "severity": "forbidden",
+      "applies_to": [
+        "firewall",
+        "deploy",
+        "db_change"
+      ],
+      "emergency_exempt": true,
+      "params": {
+        "blocked_from": "FRI 18:00",
+        "blocked_until": "MON 09:00"
+      }
+    },
+    {
+      "rule_id": "CHG-02",
+      "title": "전체 대역 오픈 금지",
+      "severity": "forbidden",
+      "applies_to": [
+        "firewall"
+      ],
+      "emergency_exempt": false,
+      "params": {
+        "banned_sources": [
+          "0.0.0.0/0",
+          "::/0"
+        ],
+        "missing_source_is": "0.0.0.0/0"
+      }
+    },
+    {
+      "rule_id": "CHG-03",
+      "title": "DB 포트 외부 노출 금지",
+      "severity": "forbidden",
+      "applies_to": [
+        "firewall"
+      ],
+      "emergency_exempt": false,
+      "params": {
+        "db_ports": [
+          5432,
+          3306
+        ],
+        "external_exception": "partners에 등록된 IP를 /32로 지정"
+      }
+    },
+    {
+      "rule_id": "CHG-04",
+      "title": "롤백 계획 필수",
+      "severity": "fixable",
+      "applies_to": [
+        "deploy",
+        "db_change"
+      ],
+      "emergency_exempt": false,
+      "params": {}
+    },
+    {
+      "rule_id": "CHG-05",
+      "title": "Tier-1 사전 공지",
+      "severity": "fixable",
+      "applies_to": [
+        "firewall",
+        "deploy",
+        "db_change"
+      ],
+      "emergency_exempt": true,
+      "params": {
+        "tier": "Tier-1",
+        "notice_hours": 24
+      }
+    },
+    {
+      "rule_id": "CHG-06",
+      "title": "동시간 변경 금지",
+      "severity": "forbidden",
+      "applies_to": [
+        "firewall",
+        "deploy",
+        "db_change",
+        "standard"
+      ],
+      "emergency_exempt": false,
+      "params": {
+        "source": "change_calendar.scheduled_changes"
+      }
+    },
+    {
+      "rule_id": "CHG-07",
+      "title": "긴급 변경 절차",
+      "severity": "procedure",
+      "applies_to": [
+        "emergency"
+      ],
+      "emergency_exempt": false,
+      "params": {
+        "ticket_pattern": "INC-\\d{4}-\\d{4}",
+        "ticket_must_be_open": true,
+        "target_must_be_in_incident_services": true,
+        "post_report_hours": 24,
+        "exempts": [
+          "CHG-01",
+          "CHG-05",
+          "CHG-10"
+        ]
+      }
+    },
+    {
+      "rule_id": "CHG-08",
+      "title": "테스트 증적",
+      "severity": "fixable",
+      "applies_to": [
+        "deploy",
+        "db_change"
+      ],
+      "emergency_exempt": false,
+      "params": {
+        "not_evidence": [
+          "사후 첨부",
+          "테스트 예정"
+        ]
+      }
+    },
+    {
+      "rule_id": "CHG-09",
+      "title": "임시 오픈 만료일 필수",
+      "severity": "fixable",
+      "applies_to": [
+        "firewall"
+      ],
+      "emergency_exempt": false,
+      "params": {
+        "only_when": "source_outside_internal",
+        "max_days": 30
+      }
+    },
+    {
+      "rule_id": "CHG-10",
+      "title": "배포 동결 기간",
+      "severity": "forbidden",
+      "applies_to": [
+        "firewall",
+        "deploy",
+        "db_change",
+        "standard"
+      ],
+      "emergency_exempt": true,
+      "params": {
+        "source": "change_calendar.freeze_periods"
+      }
+    }
+  ],
+  "standard_changes": [
+    {
+      "std_id": "STD-01",
+      "title": "로그 레벨 변경",
+      "condition": "재시작 없이 로그 레벨만 바꾸는 경우"
+    },
+    {
+      "std_id": "STD-02",
+      "title": "인증서 갱신",
+      "condition": "같은 도메인 인증서를 만료 30일 이내에 교체하는 경우"
+    }
+  ],
+  "required_fields": {
+    "firewall": [
+      "target",
+      "port",
+      "source",
+      "expires_days(외부 출발지일 때)",
+      "reason"
+    ],
+    "deploy": [
+      "target",
+      "start",
+      "has_rollback",
+      "has_test_evidence"
+    ],
+    "db_change": [
+      "target",
+      "start",
+      "has_rollback",
+      "has_test_evidence"
+    ],
+    "standard": [
+      "target",
+      "start"
+    ]
+  },
+  "risk": {
+    "tier_to_risk": {
+      "Tier-1": "높음",
+      "Tier-2": "중간",
+      "Tier-3": "낮음"
+    },
+    "bump_if": "history에 같은 service + 같은 change_type + outcome '장애'가 있으면 한 단계 상향 (최대 높음)",
+    "standard_change": null
+  }
+}

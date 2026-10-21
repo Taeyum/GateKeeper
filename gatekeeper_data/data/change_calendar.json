@@ -1,0 +1,122 @@
+{
+  "range": {
+    "from": "2026-10-26T00:00:00+09:00",
+    "to": "2026-11-08T23:59:59+09:00"
+  },
+  "freeze_periods": [
+    {
+      "freeze_id": "FRZ-01",
+      "title": "10월 월말 정산 동결",
+      "start": "2026-10-30T00:00:00+09:00",
+      "end": "2026-11-02T09:00:00+09:00",
+      "scope": [
+        "payments-service",
+        "payments-db",
+        "billing-service",
+        "billing-db",
+        "batch-settlement"
+      ]
+    },
+    {
+      "freeze_id": "FRZ-02",
+      "title": "11월 대형 할인 행사 전사 동결",
+      "start": "2026-11-06T00:00:00+09:00",
+      "end": "2026-11-09T00:00:00+09:00",
+      "scope": [
+        "*"
+      ]
+    }
+  ],
+  "scheduled_changes": [
+    {
+      "schedule_id": "SCH-109",
+      "target": "payments-db",
+      "change_type": "firewall",
+      "title": "C정산 IP 허용 (기한 14일)",
+      "start": "2026-10-26T11:00:00+09:00",
+      "end": "2026-10-26T11:30:00+09:00",
+      "owner": "정네트"
+    },
+    {
+      "schedule_id": "SCH-101",
+      "target": "payments-service",
+      "change_type": "deploy",
+      "title": "payments-service v2.14 배포",
+      "start": "2026-10-27T14:00:00+09:00",
+      "end": "2026-10-27T15:00:00+09:00",
+      "owner": "김운영"
+    },
+    {
+      "schedule_id": "SCH-108",
+      "target": "search-service",
+      "change_type": "deploy",
+      "title": "search-service 랭킹 개선 배포",
+      "start": "2026-10-27T16:00:00+09:00",
+      "end": "2026-10-27T17:00:00+09:00",
+      "owner": "오플랫"
+    },
+    {
+      "schedule_id": "SCH-102",
+      "target": "auth-db",
+      "change_type": "db_change",
+      "title": "auth-db 로그인 이력 인덱스 추가",
+      "start": "2026-10-28T10:00:00+09:00",
+      "end": "2026-10-28T11:00:00+09:00",
+      "owner": "한디비"
+    },
+    {
+      "schedule_id": "SCH-103",
+      "target": "gateway-service",
+      "change_type": "deploy",
+      "title": "gateway-service 레이트리밋 설정 배포",
+      "start": "2026-10-28T15:00:00+09:00",
+      "end": "2026-10-28T16:00:00+09:00",
+      "owner": "최인프라"
+    },
+    {
+      "schedule_id": "SCH-106",
+      "target": "web-01",
+      "change_type": "standard",
+      "title": "web-01 인증서 갱신 (STD-02)",
+      "start": "2026-10-29T11:00:00+09:00",
+      "end": "2026-10-29T11:30:00+09:00",
+      "owner": "오플랫"
+    },
+    {
+      "schedule_id": "SCH-107",
+      "target": "billing-db",
+      "change_type": "db_change",
+      "title": "billing-db 11월 파티션 추가",
+      "start": "2026-11-03T10:00:00+09:00",
+      "end": "2026-11-03T11:00:00+09:00",
+      "owner": "한디비"
+    },
+    {
+      "schedule_id": "SCH-104",
+      "target": "order-service",
+      "change_type": "deploy",
+      "title": "order-service 장바구니 개편 배포",
+      "start": "2026-11-03T14:00:00+09:00",
+      "end": "2026-11-03T15:00:00+09:00",
+      "owner": "김운영"
+    },
+    {
+      "schedule_id": "SCH-105",
+      "target": "cache-service",
+      "change_type": "db_change",
+      "title": "cache-service Redis 마이너 버전 업그레이드",
+      "start": "2026-11-04T10:00:00+09:00",
+      "end": "2026-11-04T12:00:00+09:00",
+      "owner": "최인프라"
+    },
+    {
+      "schedule_id": "SCH-110",
+      "target": "notification-service",
+      "change_type": "deploy",
+      "title": "notification-service 템플릿 엔진 교체",
+      "start": "2026-11-05T14:00:00+09:00",
+      "end": "2026-11-05T15:00:00+09:00",
+      "owner": "오플랫"
+    }
+  ]
+}

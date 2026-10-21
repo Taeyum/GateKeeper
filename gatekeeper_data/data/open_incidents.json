@@ -1,0 +1,36 @@
+{
+  "incidents": [
+    {
+      "ticket": "INC-2026-0398",
+      "title": "search-service 색인 지연",
+      "status": "closed",
+      "opened_at": "2026-10-22T09:15:00+09:00",
+      "closed_at": "2026-10-23T18:40:00+09:00",
+      "services": [
+        "search-service"
+      ]
+    },
+    {
+      "ticket": "INC-2026-0409",
+      "title": "auth-service 로그인 실패율 증가",
+      "status": "open",
+      "opened_at": "2026-10-30T17:50:00+09:00",
+      "closed_at": null,
+      "services": [
+        "auth-service",
+        "cache-service"
+      ]
+    },
+    {
+      "ticket": "INC-2026-0412",
+      "title": "payments-service 결제 응답 지연, 커넥션 풀 고갈",
+      "status": "open",
+      "opened_at": "2026-10-31T19:40:00+09:00",
+      "closed_at": null,
+      "services": [
+        "payments-service",
+        "payments-db"
+      ]
+    }
+  ]
+}

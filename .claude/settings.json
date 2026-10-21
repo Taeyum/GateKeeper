@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/requests_eval.json)",
+      "Read(**/label_review.md)",
+      "Edit(**/requests_eval.json)",
+      "Edit(**/label_review.md)",
+      "Read(./.env)"
+    ]
+  }
+}
