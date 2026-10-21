@@ -1,0 +1,206 @@
+{
+  "meta": {
+    "version": "v0",
+    "split": "dev",
+    "provider": "ollama",
+    "reps": 1,
+    "n_requests": 10,
+    "started_at": "2026-10-21T14:49:48.339913+09:00",
+    "finished_at": "2026-10-21T14:56:32.036468+09:00",
+    "git": {
+      "commit": "c5fd85239b8441828f4898f6fe272f8d45b55bdd",
+      "dirty": true
+    },
+    "models": {
+      "configured": {
+        "main": "qwen3:8b",
+        "small": "qwen3:0.6b",
+        "judge": "qwen3:8b"
+      },
+      "observed": [
+        "qwen3:8b"
+      ],
+      "judge_observed": [
+        "qwen3:8b"
+      ]
+    },
+    "prompt_sha256": {
+      "baseline_v0.md": "97e78b102282a61aff7a7a08be1420cbcea9f2032064e3a8044da46a94613080",
+      "structure_rules.md": "f9c5dddeed36f957105622cb51f0b692517571d41b95fb70c3d85809635c0807",
+      "judge_prompt.md": "d57e71d544e6dd0b4f27c5e6bab1f1c1c13518577322a26a67a35c17eda5a789"
+    },
+    "data_sha256": {
+      "change_policy.md": "253c564c041a0a4124a851d83ac088d93747c8d0b80d26aadb6772d16087fc95",
+      "rules.json": "9198c44baf8851b2e2636cc2755c1dde1d887ce863cc405bcb138453aa20319e",
+      "cmdb.json": "13c21d89ab769eaad638ef9c91b78f94d04bfe56d37a698d91eef4c2ea48a6cb",
+      "change_calendar.json": "6e6933b5148ef89096215b6108a27b743f45a87f4200e42b678dcf4ad3fa2d99",
+      "open_incidents.json": "fc833d66189cd3b70b2ebee36628ba9eec169e00f92d40513cb7d2b6802fbabc",
+      "requests_dev.json": "fe56584f85945fd2e16089a401f92040881ba44d2974f6e01c625e46dfc308f3"
+    },
+    "packages": {
+      "langchain-core": "1.6.12",
+      "langchain-ollama": "1.1.0",
+      "langchain-anthropic": "1.7.6",
+      "langgraph": "1.2.16",
+      "langsmith": "0.14.11",
+      "pydantic": "2.14.1"
+    },
+    "ollama_num_ctx": 16384,
+    "timeout_s": 600.0,
+    "warmup": "first_request",
+    "warmup_error": null,
+    "langsmith": {
+      "enabled": true,
+      "project": "gk-v0-dev-20261021-144948"
+    },
+    "judge": {
+      "enabled": true,
+      "model": "qwen3:8b",
+      "independent": false
+    }
+  },
+  "metrics": {
+    "n_requests": 10,
+    "reps": 1,
+    "n_runs": 10,
+    "n_errors": 0,
+    "verdict_accuracy": 0.5,
+    "violation_tp": 3,
+    "violation_fp": 15,
+    "violation_fn": 9,
+    "violation_precision": 0.16666666666666666,
+    "violation_recall": 0.25,
+    "violation_f1": 0.2,
+    "structured_accuracy": 0.9323308270676691,
+    "structured_by_field": {
+      "target": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "change_type": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "start": {
+        "correct": 8,
+        "total": 10,
+        "accuracy": 0.8
+      },
+      "end": {
+        "correct": 7,
+        "total": 10,
+        "accuracy": 0.7
+      },
+      "time_precision": {
+        "correct": 8,
+        "total": 10,
+        "accuracy": 0.8
+      },
+      "source": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "port": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "expires_days": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "expires_at": {
+        "correct": 8,
+        "total": 10,
+        "accuracy": 0.8
+      },
+      "has_rollback": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "has_test_evidence": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "is_emergency": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "ticket": {
+        "correct": 10,
+        "total": 10,
+        "accuracy": 1.0
+      },
+      "restart_required": {
+        "correct": 2,
+        "total": 2,
+        "accuracy": 1.0
+      },
+      "cert_expires_at": {
+        "correct": 1,
+        "total": 1,
+        "accuracy": 1.0
+      }
+    },
+    "hallucinated_count": 0,
+    "miscited_count": 15,
+    "miscited_strict_count": 18,
+    "risk_accuracy": 0.625,
+    "risk_n": 8,
+    "emergency_accuracy": 1.0,
+    "emergency_n": 1,
+    "rag_recall_at_3": null,
+    "consistency": null,
+    "alternative_score": 3.1666666666666665,
+    "alternative_n": 6
+  },
+  "latency": {
+    "n": 10,
+    "mean_s": 32.707076808298005,
+    "p95_s": 65.5498863752,
+    "max_s": 65.5498863752
+  },
+  "usage": {
+    "llm_calls_total": 10,
+    "llm_calls_per_run": 1.0,
+    "llm_errors": 0,
+    "input_tokens_total": 72573,
+    "output_tokens_total": 6133,
+    "reasoning_tokens_total": 0,
+    "input_tokens_per_run": 7257.3,
+    "output_tokens_per_run": 613.3,
+    "tokens_per_run": 7870.6,
+    "by_model": {
+      "qwen3:8b": {
+        "calls": 10,
+        "input_tokens": 72573,
+        "output_tokens": 6133,
+        "reasoning_tokens": 0
+      }
+    }
+  },
+  "cost": {
+    "unit": "USD per 1M tokens",
+    "total_usd": null,
+    "per_run_usd": null
+  },
+  "judge_usage": {
+    "llm_calls": 5,
+    "input_tokens": 31842,
+    "output_tokens": 498,
+    "errors": 0
+  },
+  "counters": {
+    "parse_retries": 0
+  },
+  "flags": {
+    "possible_truncation_runs": 0
+  }
+}
