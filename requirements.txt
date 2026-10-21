@@ -13,6 +13,13 @@ langchain-openai>=1.0
 # MCP 서버와 클라이언트 (mcp SDK는 fastmcp가 함께 설치한다)
 fastmcp>=4.1
 
+# 그래프 (v0 기준선부터 LangGraph StateGraph로 조립한다)
+langgraph>=1.0
+
+# 평가 (LangSmith Dataset/추적, 비교 차트)
+langsmith>=0.4
+matplotlib>=3.9
+
 # 테스트
 pytest>=8.0
 pytest-asyncio>=1.0
