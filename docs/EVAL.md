@@ -10,7 +10,7 @@
 | v1 | + 결정론 MCP Tool + 병렬 서브에이전트 + 라우팅 | 판정 정확도, 일관성, 지연 |
 | v2 | + 이력 RAG + Validator | 근거 품질, 환각 차단, 위험도. 대신 늘어난 지연과 토큰 |
 
-비교 축은 버전(v0, v1, v2) 하나가 아니라 **버전 x main 모델** 둘이다. 같은 버전도 main 모델이 다르면 다른 실험이다. 강한 모델(`claude-sonnet-5-5`)은 v0 단독도 잘 맞혀 구조의 효과가 정확도에 안 보일 수 있고(6장), 약한 모델(`claude-haiku-5-5`)에서는 구조가 메우는 차이가 보일 수 있다. 그래서 같은 코드와 같은 정답셋으로 `MODEL_MAIN`만 바꿔 v0와 v1(v2)을 각각 다시 재고, `eval/report.py`가 summary meta의 main 모델(`models.configured.main`)로 절을 나눠 같은 모델 안에서만 버전을 비교한다. main 모델이 다른 절의 수치는 서로 비교하지 않는다. 분류용 small 모델(`claude-haiku-5-5`)과 Judge(`claude-opus-5-5`)는 모델 축에서 고정한다. 모델 축을 9단계 최종 평가에 쓸지는 그 단계에서 정한다.
+비교 축은 버전(v0, v1, v2) 하나가 아니라 **버전 x main 모델** 둘이다. 같은 버전도 main 모델이 다르면 다른 실험이다. 강한 모델(`claude-sonnet-5-5`)은 v0 단독도 잘 맞혀 구조의 효과가 정확도에 안 보일 수 있고(6장), 약한 모델(`claude-haiku-5-5`)에서는 구조가 메우는 차이가 보일 수 있다. 그래서 같은 코드와 같은 정답셋으로 `MODEL_MAIN`만 바꿔 v0와 v1(v2)을 각각 다시 재고, `eval/report.py`가 summary meta의 main 모델(`models.configured.main`)로 절을 나눠 같은 모델 안에서만 버전을 비교한다. main 모델이 다른 절의 수치는 서로 비교하지 않는다. 분류용 small 모델(`claude-haiku-5-5`)과 Judge(`claude-opus-5-5`)는 모델 축에서 고정한다. 9단계 최종 평가는 Sonnet 축과 아래 로컬 모델 축(qwen3:4b)으로 쟀고, Haiku 축은 dev에서만 쟀다(결과는 `docs/RESULTS.md`).
 
 **로컬 모델 축 (사후 추가).** 외부 API를 못 쓰는 환경을 가정한 축으로, Ollama의 `qwen3:4b`(main)와 `qwen3:0.6b`(분류)로 v0와 v1을 dev에서 한 번씩 잰다(`--provider ollama --no-judge`). 이 PC(VRAM 6GB)에서 `qwen3:8b`는 `num_ctx=16384`일 때 GPU에 54%만 올라 느려서, GPU에 전부 올라갈 크기의 4b를 측정 전에 골랐다. 4b도 `num_ctx=16384`에서는 79%만 올라가서 `OLLAMA_NUM_CTX=10240`으로 낮춰 100% GPU에서 쟀다. `num_ctx`는 프롬프트가 잘리지 않으면 출력에 영향이 없는 성능 설정이고(v0 프롬프트는 입력 약 7.3k 토큰), 잘렸는지는 summary의 `possible_truncation_runs`로 확인한다. Judge를 쓰지 않으므로 이 축은 대안 품질이 비고, 판정, 위반, 구조화, 지연, 토큰을 본다. 이 축도 Sonnet과 Haiku 모두에서 v0와 v1이 100%로 갈리지 않는 것을 본 뒤에 더한 사후 축이다. 다른 모델 절의 수치와는 직접 비교하지 않는다.
 
@@ -70,13 +70,18 @@ bash sh/build_index.sh
 # 로컬 모델 축 (1장): 외부 API 없이 ollama로, Judge 없이 잰다. num_ctx를 낮춰 4b를 전부 GPU에 올린다.
 OLLAMA_NUM_CTX=10240 MODEL_MAIN=qwen3:4b MODEL_SMALL=qwen3:0.6b python eval/run_eval.py --version v0 --split dev --reps 1 --provider ollama --no-judge
 
-# 9단계: eval 20건, Claude API, 버전 3개 x 3회
+# 9단계: eval 20건. 아래 여섯 개를 차례대로 한 번에 돌리는 스크립트 (동시 실행 없음, 실패해도 다음으로 넘어가고 끝에 실패 목록)
+bash sh/run_final_eval.sh
+# 스크립트가 하는 일: Claude API 버전 3개 x 3회 (main Sonnet, 분류 Haiku, Judge Opus)
 python eval/run_eval.py --version v0 --split eval --reps 3 --provider anthropic --langsmith
 python eval/run_eval.py --version v1 --split eval --reps 3 --provider anthropic --langsmith
 python eval/run_eval.py --version v2 --split eval --reps 3 --provider anthropic --langsmith
+# 그리고 로컬 모델 축 버전 3개 x 1회 (Judge 없음)
+OLLAMA_NUM_CTX=10240 MODEL_MAIN=qwen3:4b MODEL_SMALL=qwen3:0.6b python eval/run_eval.py --version v0 --split eval --reps 1 --provider ollama --no-judge
 
-# 비교표와 차트
-python eval/report.py --split eval
+# 비교표와 차트 (provider마다 따로 만든다)
+python eval/report.py --split eval --provider anthropic --out results/report_eval_anthropic.md --charts-dir results/charts_eval_anthropic
+python eval/report.py --split eval --provider ollama --out results/report_eval_ollama.md --charts-dir results/charts_eval_ollama
 
 # 측정 뒤에 정의한 지표는 저장된 jsonl로 다시 계산해 summary에 더한다 (LLM을 다시 부르지 않는다)
 python eval/rescore.py results/<날짜시각>_v0_dev.summary.json
@@ -86,6 +91,7 @@ python eval/rescore.py results/<날짜시각>_v0_dev.summary.json
 - `--langsmith`는 측정 중 추적을 켠다. 프로젝트 이름은 `gk-<버전>-<split>-<날짜시각>`이고 v1, v2의 노드 단위 trace(병렬 서브에이전트 트리)가 여기에 남는다. 주지 않으면 `.env`에 `LANGCHAIN_TRACING_V2=true`가 있어도 추적을 강제로 끈다. 전송은 백그라운드 스레드라 지연 영향이 작지만, 같은 플래그로 돌린 실행끼리만 비교한다(리포트가 섞이면 경고한다). 측정 후 점수를 LangSmith 실험으로 올리는 방식(replay)은 9단계에 시간이 남으면 추가한다. LangSmith 없이도 로컬 결과만으로 리포트가 나온다.
 - `rescore.py`는 짝이 되는 jsonl의 `verdict_pred`, `violations_pred`만 읽어 판정-위반 자기모순을 다시 계산하고 summary `metrics`에 넣는다. 측정 뒤에 더한 값임을 `meta.rescored`(`at`, `metrics`, `source`)에 남기고, 리포트 참고에도 밝힌다. 기준선을 다시 돌리지 않는 원칙 때문에 v0 첫 측정은 이 방식으로 채점했다. 터미널에는 집계만 낸다.
 - Judge 호출과 warm-up은 추적하지 않는다.
+- `sh/run_final_eval.sh`는 결과를 `results/`가 아니라 `.data/final_eval`(git 제외)에 쓴다. 하네스는 `git status --porcelain`(untracked 포함)으로 dirty를 판정하므로, `results/`에 쓰면 첫 실행의 summary 때문에 두 번째 실행부터 summary의 git 정보가 dirty가 된다. 끝난 뒤 summary를 `results/`로 옮겨 커밋한다. 시작할 때 작업 트리가 깨끗하지 않으면 멈추고, `GK_DRY=1`이면 점검만 한다. 이 평가의 결과와 해석은 `docs/RESULTS.md`다.
 - `--split eval`일 때는 요청별 본문과 오답 상세를 터미널에 출력하지 않는다. 집계만 출력한다. jsonl에는 ID와 점수, 판정과 위반 ID만 남기고(설명, 근거, Judge 근거, 본문 없음) 예외는 타입 이름만 남기며, summary에는 요청별 목록이나 태그별 분해를 넣지 않는다. dev split은 판정을 못 만든 이유(`ReviewIncomplete`의 단계, 대상 값, 작업 구간 등)를 jsonl `detail.error_detail`과 터미널 진행 줄에 남긴다. 값이 본문에서 온 것이라 eval에서는 어디에도 내지 않는다.
 - `report.py`는 `results/report.md`(버전별 비교표, 전체 지표, 필드별 정확도, 메타데이터, 주석과 경고)와 `results/charts/<split>_*.png`(판정 정확도, 위반 F1, 지연 p95, 토큰, 일관성, 판정-위반 자기모순)를 만든다. split마다 같은 provider의 버전별 최신 summary를 쓴다. 발표 PPT에 그대로 넣는다.
 
