@@ -31,6 +31,7 @@ _WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
 # 버전별로 그 버전의 출력에 영향을 주는 프롬프트 파일. 실험 메타데이터의 프롬프트 해시 대상이다.
 _PROMPT_FILES: dict[str, tuple[str, ...]] = {
     "v0": ("baseline_v0.md", "structure_rules.md"),
+    "v1": ("parse_request.md", "structure_rules.md", "classify.md", "policy_agent.md", "impact_agent.md", "decide.md"),
 }
 
 

@@ -277,8 +277,8 @@ def test_CLI_인자():
     )  # fmt: skip
 
 
-def test_v1은_아직_없다고_안내하고_종료코드_2를_낸다(tmp_path, capsys):
-    assert main(["--version", "v1", "--split", "dev", "--provider", "fake", "--results-dir", str(tmp_path)]) == 2
+def test_v2는_아직_없다고_안내하고_종료코드_2를_낸다(tmp_path, capsys):
+    assert main(["--version", "v2", "--split", "dev", "--provider", "fake", "--results-dir", str(tmp_path)]) == 2
     assert "아직 없는 버전" in capsys.readouterr().err
 
 

@@ -98,16 +98,15 @@ async def test_두_번_틀리면_예외를_올린다(fake_env):
         await build_graph("v0").ainvoke(_state())
 
 
-def test_v1_v2는_아직_없다():
-    for version in ("v1", "v2"):
-        with pytest.raises(NotImplementedError):
-            build_graph(version)
+def test_v2는_아직_없고_모르는_버전은_거절한다():
+    with pytest.raises(NotImplementedError):
+        build_graph("v2")
     with pytest.raises(ValueError):
         build_graph("v9")  # type: ignore[arg-type]
 
 
 def test_버전을_안_주면_GK_VERSION을_따른다(monkeypatch):
-    monkeypatch.setenv("GK_VERSION", "v1")
+    monkeypatch.setenv("GK_VERSION", "v2")
     data_loader.clear_caches()
     with pytest.raises(NotImplementedError):
         build_graph()
@@ -120,8 +119,11 @@ def test_프롬프트_해시는_버전이_쓰는_파일마다_나온다():
     hashes = prompt_hashes("v0")
     assert set(hashes) == {"baseline_v0.md", "structure_rules.md"}
     assert all(len(value) == 64 for value in hashes.values())
+    v1 = prompt_hashes("v1")
+    assert set(v1) == {"parse_request.md", "structure_rules.md", "classify.md", "policy_agent.md", "impact_agent.md", "decide.md"}
+    assert v1["structure_rules.md"] == hashes["structure_rules.md"]  # v0과 v1이 구조화에 같은 지침을 받는다
     with pytest.raises(NotImplementedError):
-        prompt_hashes("v1")
+        prompt_hashes("v2")
 
 
 def test_metrics_reducer는_키별로_더한다():
