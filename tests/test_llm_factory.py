@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
 from app.llm.factory import LLMConfigError, check_structured_output, get_llm, structured_llm
-from app.llm.fake import FakeChatModel, FakeResponsesExhausted, set_fake_responses
+from app.llm.fake import FakeChatModel, FakeResponsesExhausted, set_fake_responses, set_fake_responses_for
 from app.schemas import Recommendation
 
 
@@ -41,6 +41,20 @@ def test_fake_구조화_출력은_스키마로_돌려준다(make_settings):
                                 '{"city": "대구", "country": "대한민국"}'])  # fmt: skip
     chain = structured_llm(llm, Answer, s)
     assert [chain.invoke("x").city for _ in range(3)] == ["서울", "부산", "대구"]
+
+
+def test_fake는_스키마_이름으로_지정한_큐를_먼저_보고_없으면_role_큐로_넘어간다(make_settings):
+    s = make_settings(llm_provider="fake")
+    llm = get_llm("main", s)
+    set_fake_responses_for("main", Answer, [{"city": "서울", "country": "대한민국"}])
+    set_fake_responses("main", [Recommendation(verdict="승인")])
+    # Recommendation을 요청하는 호출은 Answer 전용 큐를 건드리지 않는다 (병렬 노드의 순서 문제를 없앤다)
+    assert structured_llm(llm, Recommendation, s).invoke("x").verdict == "승인"
+    assert structured_llm(llm, Answer, s).invoke("x").city == "서울"
+    set_fake_responses("main", [{"city": "부산", "country": "대한민국"}])
+    assert structured_llm(llm, Answer, s).invoke("x").city == "부산"  # 전용 큐가 비면 role 큐
+    with pytest.raises(FakeResponsesExhausted):
+        structured_llm(llm, Answer, s).invoke("x")
 
 
 def test_fake_구조화_출력은_스키마_위반을_드러낸다(make_settings):
