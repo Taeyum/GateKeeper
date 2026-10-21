@@ -22,8 +22,11 @@ def test_키_값_형태는_키를_남기고_값만_가린다(text, expected):
 
 
 def test_AWS_액세스_키를_가린다():
-    assert mask_secrets("키는 AKIAIOSFODNN7EXAMPLE 입니다") == f"키는 {MASK} 입니다"
-    assert mask_secrets("임시 키 ASIAIOSFODNN7EXAMPLE") == f"임시 키 {MASK}"
+    # 소스에 키 형태가 그대로 남지 않게 이어 붙인다 (GitHub secret scanning이 예시 키도 잡는다).
+    access_key = "AKIA" + "IOSFODNN7EXAMPLE"
+    session_key = "ASIA" + "IOSFODNN7EXAMPLE"
+    assert mask_secrets(f"키는 {access_key} 입니다") == f"키는 {MASK} 입니다"
+    assert mask_secrets(f"임시 키 {session_key}") == f"임시 키 {MASK}"
 
 
 def test_PEM_블록은_통째로_가린다():
