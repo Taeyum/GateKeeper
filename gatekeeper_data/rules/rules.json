@@ -175,7 +175,10 @@
     {
       "std_id": "STD-02",
       "title": "인증서 갱신",
-      "condition": "같은 도메인 인증서를 만료 30일 이내에 교체하는 경우"
+      "condition": "같은 도메인 인증서를 만료 30일 이내에 교체하는 경우",
+      "params": {
+        "max_days_before_expiry": 30
+      }
     }
   ],
   "required_fields": {
