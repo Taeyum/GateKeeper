@@ -1,14 +1,14 @@
 """그래프 상태 (docs/SPEC.md 2장).
 
-4단계에는 v0이 쓰는 필드만 둔다. route, policy, impact, history, validation, approval은 v1 이후
-단계가 필요할 때 더한다. errors와 metrics에 reducer를 지금 두는 것은 v1의 병렬 서브에이전트가
+4단계에는 v0이 쓰는 필드만 뒀고, 5단계부터 v1 노드가 쓰는 필드를 더한다. policy, impact, history, validation,
+approval은 쓰는 노드가 생길 때 더한다. errors와 metrics에 reducer를 지금 두는 것은 v1의 병렬 서브에이전트가
 같은 키를 동시에 쓸 때 InvalidUpdateError가 나지 않게 하려는 것이다.
 """
 
 import operator
 from typing import Annotated, TypedDict
 
-from app.schemas import ChangeRequest, Recommendation
+from app.schemas import ChangeRequest, Recommendation, Route, StandardId
 
 
 def add_counters(left: dict[str, int] | None, right: dict[str, int] | None) -> dict[str, int]:
@@ -29,6 +29,12 @@ class GKState(TypedDict, total=False):
     masked_text: str
     # ① 구조화 결과와 ④ 권고. 평가 대상은 ⑥ approval_gate 직전의 recommendation이다.
     structured: ChangeRequest
+    # ② classify 결과. standard_change_id와 emergency_valid는 규칙 엔진이 확정한 값이고, route는 어디까지 검사를 도는지만 정한다.
+    route: Route
+    standard_change_id: StandardId | None
+    emergency_valid: bool | None
     recommendation: Recommendation
+    # 승인자에게 보여 줄 경고. 노드마다 더하고 decide가 Recommendation.warnings로 옮긴다.
+    warnings: Annotated[list[str], operator.add]
     errors: Annotated[list[str], operator.add]
     metrics: Annotated[dict[str, int], add_counters]

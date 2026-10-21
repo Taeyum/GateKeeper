@@ -71,6 +71,11 @@ def render_service_list() -> str:
     return "\n".join(f"- {service.id}: {service.name} ({service.type})" for service in load_cmdb().services)
 
 
+def render_standard_changes() -> str:
+    """규정 3장 표준 변경 목록을 rules.json에서 읽어 한 줄씩 쓴다. 분류 프롬프트가 같은 목록을 보게 하려는 것이다."""
+    return "\n".join(f"- {spec.std_id} {spec.title}: {spec.condition}" for spec in load_rules().standard_changes)
+
+
 def render_static_context() -> dict[str, str]:
     """규정 원문과 JSON 데이터를 프롬프트에 넣을 문자열로 만든다. 로더로 한 번 검증해서 깨진 데이터를 일찍 드러낸다."""
     load_cmdb(), load_change_calendar(), load_open_incidents()
