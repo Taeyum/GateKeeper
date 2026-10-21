@@ -80,6 +80,10 @@ python eval/report.py
 | `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT` | | LangSmith |
 | `GK_DATA_DIR` | `gatekeeper_data` | 데이터 위치 |
 | `GK_CHECKPOINT_DB` | `.data/checkpoints.sqlite` | HITL 체크포인터 |
+| `GK_RAG_DIR` | `.data/rag` | RAG 색인 폴더 (`bash sh/build_index.sh`가 만든다) |
+| `GK_AUDIT_LOG` | `.data/audit.jsonl` | 감사 로그 (JSON Lines) |
+| `GK_WEB_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | CORS로 허용할 화면 주소 (쉼표로 여럿) |
+| `GK_RUN_TIMEOUT_S` | `300` | 요청 하나의 그래프 실행 제한 (초). 넘으면 수동 검토 |
 
 ## 코드 스타일
 

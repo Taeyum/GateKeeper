@@ -235,7 +235,7 @@
 |---|---|---|
 | `request_id`, `status`, `version`, `requester`, `submitted_at`, `route` | | `version`은 `GK_VERSION`(`v0`/`v1`/`v2`), `route`는 `standard`/`general`/`emergency`/`null`(분류 전) |
 | `parent_request_id` | string / null | 재요청이면 부모 요청 번호, 아니면 `null` |
-| `text` | string | 마스킹한 본문(`masked_text`). 원문은 보내지 않는다 |
+| `text` | string | 이번 요청에 새로 쓴 본문(마스킹). 재요청이어도 부모 본문은 포함하지 않는다(그래프 입력은 부모 본문과 합친 문장이지만 응답에는 새 본문만). 원문은 보내지 않는다 |
 | `nodes` | array | **실행을 시작한 노드만** 들어 있다(최상위 9개 안에서). 안 돈 노드는 항목이 없다(아래 "건너뜀 규칙"). `status`는 `running`/`done`/`failed`. `failed`이면 `error`에 사용자용 문장("영향도: 확인 불가") |
 | `structured` | `ChangeRequest` / null | ① 결과. 분석 전이면 `null` |
 | `recommendation` | `Recommendation` / null | ④ 결과(⑤ 이후 확정본). 아직 없으면 `null` |
@@ -243,7 +243,7 @@
 | `impact` | object / null | ③ impact_agent 결과. `id`, `name`, `tier`, `owner_team`, `depends_on`, `dependents`는 `cmdb.json` 서비스의 원래 키, `same_time_changes`는 `change_calendar.json`의 `scheduled_changes` 항목(`schedule_id`, `target`, `change_type`, `title`, `start`, `end`, `owner`)이다. 표준 변경 경로에서는 `null` |
 | `similar_incidents` | array | ③ history_agent가 찾은 상위 건. `history.json` 항목의 원래 키 그대로다. `outcome`이 `장애`가 아닌 항목도 들어올 수 있고, 화면은 `outcome == "장애"`이고 `incident`가 있는 것만 "비슷한 사고"로 보여 준다. v0/v1/표준 변경이면 빈 배열 |
 | `has_similar_incident` | boolean | **봉투 필드.** "유사 장애 있음"이다. 정의는 **같은 서비스 + 같은 유형 + `outcome`이 `장애`인 이력이 있음**(`history.bump`)이고, 위험도를 한 단계 올린 근거다. 결재함 표시에 쓴다. `similar_incidents`에 장애 항목이 보이는 것과는 별개로 이 값으로 판단한다. v0/v1은 항상 `false` |
-| `approval` | object / null | 사람 결정 뒤에 `{ "decision": "approve", "approver": "박CAB", "comment": "...", "at": "..." }`. `approver`는 서버가 `X-User-Name`에서 채운다 |
+| `approval` | object / null | 사람 결정 뒤에 `{ "decision": "approve", "approver": "박CAB", "comment": "...", "at": "..." }`. `approver`는 서버가 `X-User-Name`에서 채운다. 표준 변경의 자동 승인은 사람 결정이 아니므로 `null`이고 처리 시각은 `decided_at`(요약)과 `done`의 `at`에 있다 |
 | `errors` | string[] | 부분 실패 문장("영향도: 확인 불가"). 비어 있으면 모두 정상 |
 
 `alternative_diff` 항목
@@ -371,3 +371,19 @@ data: {"node":"policy_agent","at":"2026-10-29T16:00:05+09:00"}
 | 내 요청 목록 (L1) | `GET /api/requests`. 요청자는 본인 요청만, 승인자는 전부, 최신순. 항목은 `RequestSummary` |
 | 서브그래프 내부 노드 (L2) | 보내지 않는다. SSE와 `nodes`에는 최상위 노드 9개만 나온다 |
 | 수동 검토 이벤트 (L3) | 예상한 검토 불가는 `done`(`manual_review` + `message`), 예상 못 한 서버 오류만 `error` |
+| 재요청의 `text` (7단계, 사용자 결정) | 상세 응답의 `text`는 이번에 새로 쓴 본문(마스킹)만. 부모 본문과 합친 문장은 그래프 입력에만 쓴다 |
+
+## 7단계 구현에서 확정한 해석
+
+계약이 정하지 않았던 곳을 구현하며 이렇게 정했다. 계약의 문장을 바꾼 것은 아니고 `text` 한 줄(위 결정 기록)만 사용자 결정으로 바뀌었다.
+
+- 표준 변경의 자동 승인은 `approval`이 `null`이다. `done`은 `status: auto_approved`, `approval: null`이고 `awaiting_approval`은 보내지 않는다.
+- 자동 승인은 route가 `standard`이고 판정이 자동 승인일 때만이다. 작은 모델과 분류가 어긋나 route가 `general`이 된 표준 변경(`recommendation.warnings`에 "분류 불일치: 사람 확인 필요")은 판정이 자동 승인이어도 `awaiting_approval`로 간다.
+- `recommendation` 이벤트는 승인 단계(`approval_gate`)가 시작될 때 한 번 보낸다. validate가 실패해 decide, validate가 다시 돌아도 마지막 권고 하나다. 그때 `node_started`/`node_completed`는 두 번째 실행의 이벤트도 그대로 보내고, 상세의 `nodes`는 노드당 한 항목(시작 시각은 처음 것, 종료와 상태는 마지막 것)이다.
+- 병렬 세 노드(policy_agent, impact_agent, history_agent)의 `node_started` 순서는 정해져 있지 않다. 셋의 시작이 어느 종료보다 먼저 온다.
+- `awaiting_approval`은 이벤트 기록의 마지막일 때만 스트림을 닫는다. 승인자가 결정한 뒤에 연결하면 `awaiting_approval`에서 멈추지 않고 `done`까지 받는다.
+- 서버를 다시 띄운 뒤에는 요청의 상태가 무엇이든(결정이 난 요청 포함) 종료 이벤트 하나만 보내고 닫는다. 이때 `awaiting_approval`의 `at`은 연결한 시각이다. `nodes`는 비어 있다.
+- 실행 도중 서버가 꺼진 요청은 다시 뜰 때 `manual_review`로 닫고 `message`는 "서버가 다시 시작되어 검토가 중단됐어요. 수동 검토로 넘겨요."다. 자동으로 다시 실행하지 않는다.
+- 상세의 `errors`는 서브에이전트가 끝내 확인하지 못한 것의 사용자용 문장("영향도: 확인 불가")만 담는다. 그 노드의 `node_completed`에도 같은 문장이 `error`로 실린다.
+- 역할 헤더가 없거나(`X-User-Role`, `X-User-Name`) 맞지 않거나 이름이 비면(또는 100자를 넘거나 제어 문자가 있으면) 403이고 감사 로그에 남는다. `GET /api/approvals?status=`가 `awaiting_approval`, `auto_approved`가 아니면 422다.
+- 다른 요청자의 요청도 `GET /api/requests/{id}`로 볼 수 있다(두 역할 모두 허용, 데모는 헤더를 믿는다). 목록만 요청자 본인 것으로 좁힌다.
