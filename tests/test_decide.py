@@ -20,6 +20,7 @@ from app.agent.nodes.decide import (
     time_violations,
     unchecked_time_rules,
 )
+from app.agent.prompting import load_prompt
 from app.agent.results import AlternativePlan, RuleNote, SubagentResult
 from app.data_loader import load_requests, load_rules
 from app.rules_engine.context import effective_change_type
@@ -465,6 +466,15 @@ async def test_프롬프트에_엔진_결과와_조항별_설명_영향도가_�
     assert "- CHG-01 (금지): " in user.content and "- CHG-01: 금요일 저녁은 금지 시간대다" in user.content
     assert "영향도 요약\n영향도 요약" in user.content and "일정 대안 필요: 예 (시간 조항 위반: CHG-01, CHG-10)" in user.content
     assert "2026-10-29 16:00 (목) Asia/Seoul" in user.content
+
+
+def test_설명은_규정_번호와_영어_약어_없는_해요체_두세_문장으로_쓰게_한다():  # K5
+    """화면이 explanation을 승인자에게 그대로 보여 주고, 규정 번호는 citations로 따로 보여 준다."""
+    line = next(row for row in load_prompt("decide.md").splitlines() if row.startswith("- explanation:"))
+    assert '"~해요"체로 두세 문장' in line
+    assert "규정 번호(CHG-01, STD-01 같은 것)와 영어 약어" in line and "쉬운 우리말로 풀어 쓴다" in line
+    assert "세 문장 안팎" not in line and '"면제 적용"' not in line  # 이전 지시가 남아 충돌하지 않는다
+    assert "대안 일정의 시각은 쓰지 않는다" in line  # 대안 시각은 코드가 조립한다 (기존 규칙 유지)
 
 
 def test_입력_구성_표준_변경과_긴급_변경():
