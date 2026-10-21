@@ -1,12 +1,13 @@
 {
   "unit": "USD per 1M tokens",
-  "note": "값은 직접 채운다. 모델의 input과 output이 모두 숫자여야 예상 비용을 계산한다. 하나라도 null이면 비용은 '-'로 나온다. 로컬 모델(ollama)은 0을 넣으면 0으로 계산한다.",
+  "note": "모델의 input과 output이 모두 숫자여야 예상 비용을 계산한다. 하나라도 null이면 비용은 '-'로 나온다. 로컬 모델(ollama)은 0을 넣으면 0으로 계산한다. Anthropic 단가는 공식 가격 페이지(https://platform.claude.com/docs/en/about-claude/pricing)의 표준 단가를 2026-10-21에 옮긴 것이다. 출력 단가는 usage의 output_tokens(thinking 토큰 포함)에 곱한다. 프롬프트 캐시 할인은 반영하지 않는다. claude-haiku-5-5는 프롬프트가 100,000 토큰을 넘는 요청이 더 비싸지만(input 0.50, output 2.50) 이 평가의 요청은 그 아래다.",
   "models": {
     "qwen3:8b": { "input": null, "output": null },
-    "qwen3:0.6b": { "input": null, "output": null },
-    "claude-sonnet-5-5": { "input": null, "output": null },
-    "claude-haiku-5-5": { "input": null, "output": null },
-    "claude-opus-5-5": { "input": null, "output": null },
+    "qwen3:4b": { "input": 0, "output": 0 },
+    "qwen3:0.6b": { "input": 0, "output": 0 },
+    "claude-sonnet-5-5": { "input": 2.0, "output": 10.0 },
+    "claude-haiku-5-5": { "input": 0.1, "output": 0.5 },
+    "claude-opus-5-5": { "input": 4.0, "output": 20.0 },
     "gpt-4o": { "input": null, "output": null },
     "gpt-4o-mini": { "input": null, "output": null }
   }
