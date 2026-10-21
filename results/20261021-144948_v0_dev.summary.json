@@ -57,6 +57,13 @@
       "enabled": true,
       "model": "qwen3:8b",
       "independent": false
+    },
+    "rescored": {
+      "at": "2026-10-21T17:09:14.823548+09:00",
+      "metrics": [
+        "self_contradiction"
+      ],
+      "source": "jsonl"
     }
   },
   "metrics": {
@@ -159,7 +166,10 @@
     "rag_recall_at_3": null,
     "consistency": null,
     "alternative_score": 3.1666666666666665,
-    "alternative_n": 6
+    "alternative_n": 6,
+    "self_contradiction_rate": 0.6,
+    "self_contradiction_count": 6,
+    "self_contradiction_n": 10
   },
   "latency": {
     "n": 10,

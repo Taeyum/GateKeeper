@@ -1,6 +1,6 @@
 # GateKeeper 평가 리포트
 
-생성 2026-10-21 14:57 (python eval/report.py). 원자료는 results/*.summary.json이다.
+생성 2026-10-21 17:09 (python eval/report.py). 원자료는 results/*.summary.json이다.
 
 ## dev 평가
 
@@ -14,6 +14,7 @@ provider ollama, 요청 10건 x 반복 1회. 측정한 버전: v0.
 | 판정 정확도 | 50.0% | - | - | - |
 | 위반 조항 F1 | 20.0% | - | - | - |
 | 일관성 (반복 간 판정 일치) | - | - | - | - |
+| 판정-위반 자기모순 (낮을수록 좋음) | 60.0% | - | - | - |
 | 환각 조항 수 | 0 | - | - | - |
 | RAG 재현율@3 | - | - | - | - |
 | 지연 p95 (초) | 65.5 | - | - | - |
@@ -34,6 +35,8 @@ provider ollama, 요청 10건 x 반복 1회. 측정한 버전: v0.
 | 오인용 수 (엄격, 허용 목록 없음) | 18 | - | - |
 | 위험도 일치율 | 62.5% | - | - |
 | 긴급 판정 정확도 | 100.0% | - | - |
+| 판정-위반 자기모순 (낮을수록 좋음) | 60.0% | - | - |
+|   자기모순 실행 수 / 따진 실행 수 | 6 / 10 | - | - |
 | RAG 재현율@3 | - | - | - |
 | 일관성 | - | - | - |
 | 대안 품질 (Judge 1~5) | 3.17 | - | - |
@@ -88,6 +91,8 @@ gold가 null인 restart_required, cert_expires_at은 비교에서 빠진다(괄�
 - p95는 nearest-rank로 계산한다. 실행이 10건이면 순위가 10번째라 n=10이면 최댓값과 같다. 표본이 작아서 수치 차이를 통계적 결론으로 읽지 않는다.
 - v0, v1은 과거 이력을 받지 않아 위험도를 CMDB 등급으로만 정한다. 이력 기반 상향과 RAG 재현율은 v2의 RAG가 더하는 정보다.
 - Judge 모델이 시스템 모델과 같은 실행은 대안 품질이 비독립 평가다. 단계별 추세를 보는 용도이고, 최종 평가(anthropic, opus)와 직접 비교하지 않는다.
+- meta에 rescored가 있는 실행은 측정 뒤 저장된 결과(jsonl)로 지표를 다시 계산해 더했다. LLM은 다시 부르지 않았다.
+- 판정-위반 자기모순은 pred 위반 목록의 구분(금지/보완)으로 규정 1장 판정을 다시 계산해 pred 판정과 다른 실행의 비율이다. v1, v2는 판정을 코드가 위반 목록에서 계산하므로 구조적으로 0이다.
 - 오인용은 gold가 긴급이면 CHG-07, 표준 변경이면 해당 STD 인용을 허용한 수치이고, 허용 목록 없는 엄격 수치를 같이 적는다.
 - 예상 비용은 eval/pricing.json의 단가가 채워진 모델만 계산한다. 비어 있으면 '-'이다.
 
@@ -102,4 +107,6 @@ gold가 null인 restart_required, cert_expires_at은 비교에서 빠진다(괄�
 ![dev_tokens_per_run](charts/dev_tokens_per_run.png)
 
 ![dev_consistency](charts/dev_consistency.png)
+
+![dev_self_contradiction](charts/dev_self_contradiction.png)
 
