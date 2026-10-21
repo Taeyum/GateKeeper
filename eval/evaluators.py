@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from app.data_loader import load_policy_text, load_rules
 from app.mcp_server.policy_docs import split_policy
-from app.schemas import KST, ChangeRequest, LabeledRequest, LabelStructured, Recommendation
+from app.schemas import KST, ChangeRequest, LabeledRequest, LabelStructured, Recommendation, RulesConfig
 
 ERROR_VERDICT = "ERROR"
 
@@ -71,6 +71,8 @@ class CaseScore(BaseModel):
     risk_correct: bool | None = None
     emergency_correct: bool | None = None
     rag_recall: float | None = None
+    # 판정이 자기 위반 목록에서 규정 1장대로 계산한 판정과 다른지. 오류 난 실행은 None.
+    self_contradiction: bool | None = None
     needs_alternative: bool
     # Judge가 채운다 (eval/judge.py). 대안이 필요 없거나 Judge를 끄면 None.
     judge_score: int | None = None
@@ -103,6 +105,9 @@ class MetricsSummary(BaseModel):
     risk_n: int
     emergency_accuracy: float | None
     emergency_n: int
+    self_contradiction_rate: float | None
+    self_contradiction_count: int
+    self_contradiction_n: int
     rag_recall_at_3: float | None
     consistency: float | None
     alternative_score: float | None
@@ -216,6 +221,44 @@ def allowed_extra_citations(gold: LabeledRequest) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
+# 판정과 위반 목록의 자기모순
+# ---------------------------------------------------------------------------
+
+
+def verdict_from_own_violations(verdict_pred: str, violations_pred: list[str], rules: RulesConfig) -> str:
+    """pred 위반 목록만으로 규정 1장 판정을 다시 계산한다. 규칙 엔진은 쓰지 않고 rules.json만 읽는다.
+
+    구분은 rules.json의 severity다(pred가 스스로 단 severity는 보지 않는다). 규정에 구분이 없는 ID(STD, 지어낸 ID)와
+    procedure(CHG-07)는 계산에서 뺀다. 위반이 없으면 표준 변경 여부를 pred 판정이 "자동 승인"인지로 본다.
+    """
+    severities = {spec.rule_id: spec.severity for spec in rules.rules}
+    found = {severities[rule_id] for rule_id in violations_pred if rule_id in severities}
+    by_severity = rules.verdict_by_severity
+    if "forbidden" in found:
+        return by_severity["forbidden"]
+    if "fixable" in found:
+        return by_severity["fixable"]
+    return by_severity["none_standard"] if verdict_pred == by_severity["none_standard"] else by_severity["none_general"]
+
+
+def self_contradiction(verdict_pred: str, violations_pred: list[str], rules: RulesConfig) -> bool | None:
+    """pred 판정이 자기 위반 목록으로 다시 계산한 판정과 다르면 True. 오류 난 실행은 정의할 수 없어 None.
+
+    v0은 금지 조항을 위반으로 적고도 "조건부 승인"을 내는 식으로 모순된다. v1, v2는 판정을 코드가 위반 목록에서
+    계산하므로 구조적으로 False다.
+    """
+    if verdict_pred == ERROR_VERDICT:
+        return None
+    return verdict_pred != verdict_from_own_violations(verdict_pred, violations_pred, rules)
+
+
+def summarize_self_contradiction(flags: list[bool | None]) -> tuple[int, int, float | None]:
+    """(모순 실행 수, 따질 수 있는 실행 수, 비율). None은 분모에서 뺀다."""
+    defined = [flag for flag in flags if flag is not None]
+    return sum(defined), len(defined), _ratio(sum(defined), len(defined))
+
+
+# ---------------------------------------------------------------------------
 # 채점
 # ---------------------------------------------------------------------------
 
@@ -227,6 +270,7 @@ def score_case(
     rep: int = 0,
     rag_enabled: bool = False,
     valid_rule_ids: frozenset[str] | None = None,
+    rules: RulesConfig | None = None,
 ) -> CaseScore:
     """실행 1회를 채점한다. rag_enabled는 v2일 때만 True (RAG 재현율 대상)."""
     valid = valid_rule_ids if valid_rule_ids is not None else policy_rule_ids()
@@ -280,6 +324,7 @@ def score_case(
         risk_correct=risk_correct,
         emergency_correct=emergency_correct,
         rag_recall=rag_recall,
+        self_contradiction=self_contradiction(verdict_pred, violations_pred, rules or load_rules()),
         needs_alternative=expected.verdict in _ALTERNATIVE_VERDICTS,
     )
 
@@ -349,6 +394,9 @@ def aggregate(cases: list[CaseScore], reps: int) -> MetricsSummary:
     emergency = [c.emergency_correct for c in cases if c.emergency_correct is not None]
     rag = [c.rag_recall for c in cases if c.rag_recall is not None]
     judged = [c.judge_score for c in cases if c.judge_score is not None]
+    contradiction_count, contradiction_n, contradiction_rate = summarize_self_contradiction(
+        [c.self_contradiction for c in cases]
+    )
 
     return MetricsSummary(
         n_requests=len({c.request_id for c in cases}),
@@ -371,6 +419,9 @@ def aggregate(cases: list[CaseScore], reps: int) -> MetricsSummary:
         risk_n=len(risk),
         emergency_accuracy=_ratio(sum(emergency), len(emergency)),
         emergency_n=len(emergency),
+        self_contradiction_rate=contradiction_rate,
+        self_contradiction_count=contradiction_count,
+        self_contradiction_n=contradiction_n,
         rag_recall_at_3=_mean(rag),
         consistency=_consistency(cases, reps),
         alternative_score=_mean([float(s) for s in judged]),

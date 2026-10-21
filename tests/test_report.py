@@ -18,6 +18,7 @@ from eval.report import (
     build_report,
     chart_specs,
     comparability_warnings,
+    detail_table,
     headline_table,
     main,
     select_latest,
@@ -34,7 +35,8 @@ def make_summary(version="v0", *, split="dev", provider="ollama", started="2026-
         n_requests=10, n_runs=10, n_errors=0, verdict_accuracy=0.6, violation_precision=0.7, violation_recall=0.5,
         violation_f1=0.5833, structured_accuracy=0.8, hallucinated_count=3, miscited_count=2, miscited_strict_count=3,
         risk_accuracy=0.75, risk_n=8, emergency_accuracy=1.0, emergency_n=1, rag_recall_at_3=None, consistency=None,
-        alternative_score=3.0, alternative_n=6,
+        alternative_score=3.0, alternative_n=6, self_contradiction_rate=0.6, self_contradiction_count=6,
+        self_contradiction_n=10,
     )  # fmt: skip
     summary = {
         "meta": {
@@ -130,6 +132,35 @@ def test_Before_After_표는_없는_버전을_대시로_두고_변화를_v0에�
     assert "| 예상 비용 / 실행 (USD) | - | - | - | - |" in table
 
 
+def test_자기모순_지표는_Before_After_표와_전체_지표_표에_나온다():
+    v0 = make_summary("v0")
+    v1 = make_summary("v1", metrics={"self_contradiction_rate": 0.0, "self_contradiction_count": 0})
+    v2 = make_summary("v2", metrics={"self_contradiction_rate": 0.0, "self_contradiction_count": 0})
+    table = headline_table({"v0": v0, "v1": v1, "v2": v2})
+    assert "| 판정-위반 자기모순 (낮을수록 좋음) | 60.0% | 0.0% | 0.0% | -60.0%p |" in table
+    detail = detail_table({"v0": v0, "v1": v1})
+    assert "| 판정-위반 자기모순 (낮을수록 좋음) | 60.0% | 0.0% | - |" in detail
+    assert "|   자기모순 실행 수 / 따진 실행 수 | 6 / 10 | 0 / 10 | - |" in detail
+
+
+def test_자기모순_지표가_없던_시절의_summary는_대시로_나오고_리포트가_깨지지_않는다(tmp_path):
+    old = make_summary("v0")
+    for key in ("self_contradiction_rate", "self_contradiction_count", "self_contradiction_n"):
+        del old["metrics"][key]
+    assert "| 판정-위반 자기모순 (낮을수록 좋음) | - | - | - | - |" in headline_table({"v0": old})
+    write_summaries(tmp_path, [old])
+    assert build_report(tmp_path, tmp_path / "report.md", tmp_path / "charts", ["dev"], None, now=NOW) == ["dev"]
+
+
+def test_rescored_실행은_리포트_참고에_밝힌다(tmp_path):
+    rescored = make_summary("v0")
+    rescored["meta"]["rescored"] = {"at": "2026-10-21T18:00:00+09:00", "metrics": ["self_contradiction"], "source": "jsonl"}
+    write_summaries(tmp_path, [rescored])
+    build_report(tmp_path, tmp_path / "report.md", tmp_path / "charts", ["dev"], None, now=NOW)
+    text = (tmp_path / "report.md").read_text(encoding="utf-8")
+    assert "측정 뒤 저장된 결과(jsonl)로 지표를 다시 계산" in text and "구조적으로 0이다" in text
+
+
 # ---------------------------------------------------------------------------
 # 비교 가능성 경고
 # ---------------------------------------------------------------------------
@@ -154,13 +185,16 @@ def test_모델_요청_수_추적_여부가_다르면_경고하고_커밋_차이
 # ---------------------------------------------------------------------------
 
 
-def test_차트_사양_5장():
+def test_차트_사양_6장():
     chosen = {s["meta"]["version"]: s for s in three_versions()}
     specs = chart_specs(chosen)
-    assert [s["name"] for s in specs] == ["verdict_accuracy", "violation_f1", "latency_p95", "tokens_per_run", "consistency"]
+    assert [s["name"] for s in specs] == [
+        "verdict_accuracy", "violation_f1", "latency_p95", "tokens_per_run", "consistency", "self_contradiction",
+    ]  # fmt: skip
     latency = next(s for s in specs if s["name"] == "latency_p95")
     assert latency["values"] == {"v0": 38.2, "v1": 60.0, "v2": 80.0} and latency["ylim"][1] >= 80.0 * 1.18
     assert next(s for s in specs if s["name"] == "consistency")["values"] == {"v0": None, "v1": None, "v2": None}
+    assert next(s for s in specs if s["name"] == "self_contradiction")["values"] == {"v0": 0.6, "v1": 0.6, "v2": 0.6}
 
 
 @pytest.mark.parametrize(
@@ -191,7 +225,8 @@ def test_report_md와_차트_PNG를_만든다(tmp_path):
     assert "비독립 평가" in text and "n=10이면 최댓값과 같다" in text  # 비독립 Judge, p95 정의 주석
     images = sorted((tmp_path / "charts").glob("dev_*.png"))
     assert [p.stem for p in images] == sorted(
-        f"dev_{n}" for n in ("verdict_accuracy", "violation_f1", "latency_p95", "tokens_per_run", "consistency")
+        f"dev_{n}"
+        for n in ("verdict_accuracy", "violation_f1", "latency_p95", "tokens_per_run", "consistency", "self_contradiction")
     )
     assert all(p.read_bytes().startswith(PNG_MAGIC) and p.stat().st_size > 5_000 for p in images)
     assert "![dev_verdict_accuracy](charts/dev_verdict_accuracy.png)" in text

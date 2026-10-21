@@ -35,6 +35,7 @@
 | 품질 | 구조화 정확도 | 필드 단위 micro 일치율(맞은 필드 / 비교한 필드)과 필드별 표. 필드: target, change_type(`acceptable_change_types` 안이면 정답), start, end, time_precision, source, port, expires_days, expires_at, has_rollback, has_test_evidence, is_emergency, ticket, restart_required, cert_expires_at. 시각은 KST 분 단위 비교. gold가 range면 start는 날짜로, end는 마지막 순간(end - 1마이크로초)의 날짜로 비교한다(반열린 구간이라 "월 00:00"과 "일 23:59"가 같은 날). 출발지는 단일 IP를 /32로 정규화하고 쉼표로 여러 개면 집합으로 비교한다. 티켓은 strip과 대문자. gold가 null인 restart_required와 cert_expires_at은 제외하고, 나머지 필드는 null도 하나의 값이라 null과 false는 서로 다르다. 오류 난 실행은 비교 대상 필드가 모두 오답 | 전체 |
 | 품질 | 환각 / 오인용 수 | 인용 = `citations`와 `violations`의 rule_id 합집합. 환각 = 규정에 없는 ID(조항 CHG-01~10과 STD-01/02만 있다). 오인용 = 규정에는 있지만 gold 위반에 없는 ID. 단 gold가 긴급 변경이면 CHG-07, gold가 표준 변경이면 gold의 STD ID는 판정의 근거 조항이라 오인용이 아니다. 면제된 조항(CHG-01/05/10)을 `citations`에 넣으면 오인용이다(면제는 `explanation`에만 쓴다). 허용 목록 없는 엄격 수치도 같이 남긴다 | 전체 |
 | 품질 | 일관성 | 같은 요청을 3회 실행했을 때 판정이 3번 다 같은 요청의 비율. 한 번이라도 오류가 난 요청은 일관적이지 않은 것으로 센다. 반복이 1회면 정의할 수 없어 "-" | 전체 (3회 반복 시) |
+| 품질 | 판정-위반 자기모순 | pred 위반 목록의 구분(rules.json의 금지/보완)으로 규정 1장 판정을 다시 계산했을 때 pred 판정과 다른 실행의 비율(낮을수록 좋음). 금지 위반이 있으면 반려, 보완만 있으면 조건부 승인, 위반이 없으면 pred 판정이 "자동 승인"일 때만 자동 승인이고 아니면 승인으로 본다. pred가 스스로 단 severity는 보지 않고, 평가기 독립 원칙대로 `rules_engine`이 아니라 rules.json만 읽는다. 규정에 구분이 없는 ID(STD, 지어낸 ID)와 CHG-07은 계산에서 뺀다. 오류 난 실행은 정의할 수 없어 분모에서 뺀다(`self_contradiction_n`). v1, v2는 판정을 코드가 위반 목록에서 계산하므로 구조적으로 0이다 | 전체 |
 | 품질 | 위험도 일치율 | `pred.risk == gold.risk` (gold가 null인 표준 변경 제외) | 전체 |
 | 품질 | 긴급 판정 정확도 | gold `is_emergency`가 true인 요청에서 `emergency_valid` 일치 (dev는 REQ-D07 1건) | 전체 |
 | 품질 | RAG 재현율@3 | gold `similar_history`가 비어 있지 않은 요청에서 검색 상위 3건이 gold를 몇 % 포함하는지(요청별 평균). 최종 `similar_history`는 필터를 거친 값이라 검색 결과(상태의 `history` 원본)로 계산한다 | v2 |
@@ -62,13 +63,17 @@ python eval/run_eval.py --version v2 --split eval --reps 3 --provider anthropic 
 
 # 비교표와 차트
 python eval/report.py --split eval
+
+# 측정 뒤에 정의한 지표는 저장된 jsonl로 다시 계산해 summary에 더한다 (LLM을 다시 부르지 않는다)
+python eval/rescore.py results/<날짜시각>_v0_dev.summary.json
 ```
 
 - `run_eval.py`는 결과를 `results/<날짜시각>_<버전>_<split>.jsonl`(요청별, git 제외)과 `results/<날짜시각>_<버전>_<split>.summary.json`(집계)으로 저장한다. 옵션: `--version --split --reps --provider --langsmith`, 그리고 `--no-judge`(Judge 생략), `--limit N`(dev에서만), `--timeout`(요청 1건 시간 제한 초, 기본 600).
 - `--langsmith`는 측정 중 추적을 켠다. 프로젝트 이름은 `gk-<버전>-<split>-<날짜시각>`이고 v1, v2의 노드 단위 trace(병렬 서브에이전트 트리)가 여기에 남는다. 주지 않으면 `.env`에 `LANGCHAIN_TRACING_V2=true`가 있어도 추적을 강제로 끈다. 전송은 백그라운드 스레드라 지연 영향이 작지만, 같은 플래그로 돌린 실행끼리만 비교한다(리포트가 섞이면 경고한다). 측정 후 점수를 LangSmith 실험으로 올리는 방식(replay)은 9단계에 시간이 남으면 추가한다. LangSmith 없이도 로컬 결과만으로 리포트가 나온다.
+- `rescore.py`는 짝이 되는 jsonl의 `verdict_pred`, `violations_pred`만 읽어 판정-위반 자기모순을 다시 계산하고 summary `metrics`에 넣는다. 측정 뒤에 더한 값임을 `meta.rescored`(`at`, `metrics`, `source`)에 남기고, 리포트 참고에도 밝힌다. 기준선을 다시 돌리지 않는 원칙 때문에 v0 첫 측정은 이 방식으로 채점했다. 터미널에는 집계만 낸다.
 - Judge 호출과 warm-up은 추적하지 않는다.
 - `--split eval`일 때는 요청별 본문과 오답 상세를 터미널에 출력하지 않는다. 집계만 출력한다. jsonl에는 ID와 점수, 판정과 위반 ID만 남기고(설명, 근거, Judge 근거, 본문 없음) 예외는 타입 이름만 남기며, summary에는 요청별 목록이나 태그별 분해를 넣지 않는다.
-- `report.py`는 `results/report.md`(버전별 비교표, 전체 지표, 필드별 정확도, 메타데이터, 주석과 경고)와 `results/charts/<split>_*.png`(판정 정확도, 위반 F1, 지연 p95, 토큰, 일관성)를 만든다. split마다 같은 provider의 버전별 최신 summary를 쓴다. 발표 PPT에 그대로 넣는다.
+- `report.py`는 `results/report.md`(버전별 비교표, 전체 지표, 필드별 정확도, 메타데이터, 주석과 경고)와 `results/charts/<split>_*.png`(판정 정확도, 위반 F1, 지연 p95, 토큰, 일관성, 판정-위반 자기모순)를 만든다. split마다 같은 provider의 버전별 최신 summary를 쓴다. 발표 PPT에 그대로 넣는다.
 
 ## 5. 발표용 Before/After 표 (틀)
 
@@ -77,6 +82,7 @@ python eval/report.py --split eval
 | 판정 정확도 | | | | |
 | 위반 조항 F1 | | | | |
 | 일관성 (3회) | | | | |
+| 판정-위반 자기모순 (낮을수록 좋음) | | | | |
 | 환각 조항 수 | | | | |
 | RAG 재현율@3 | - | - | | |
 | 지연 p95 (초) | | | | |

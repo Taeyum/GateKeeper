@@ -95,6 +95,14 @@ def _usd(v):
     return "-" if v is None else f"{v:.5f}"
 
 
+def _count_of(summary: dict[str, Any]) -> str:
+    """자기모순 실행 수 / 따진 실행 수. 이 지표가 없던 시절의 summary는 '-'."""
+    metrics = summary["metrics"]
+    if metrics.get("self_contradiction_n") is None:
+        return "-"
+    return f"{metrics['self_contradiction_count']} / {metrics['self_contradiction_n']}"
+
+
 def _delta(kind: str, a, b) -> str:
     if a is None or b is None:
         return "-"
@@ -112,6 +120,7 @@ HEADLINE_ROWS = [
     ("판정 정확도", lambda s: s["metrics"]["verdict_accuracy"], _pct, "pp"),
     ("위반 조항 F1", lambda s: s["metrics"]["violation_f1"], _pct, "pp"),
     ("일관성 (반복 간 판정 일치)", lambda s: s["metrics"]["consistency"], _pct, "pp"),
+    ("판정-위반 자기모순 (낮을수록 좋음)", lambda s: s["metrics"].get("self_contradiction_rate"), _pct, "pp"),
     ("환각 조항 수", lambda s: s["metrics"]["hallucinated_count"], _int, "int"),
     ("RAG 재현율@3", lambda s: s["metrics"]["rag_recall_at_3"], _pct, "pp"),
     ("지연 p95 (초)", lambda s: s["latency"]["p95_s"], _fixed(1), "abs"),
@@ -130,6 +139,8 @@ DETAIL_ROWS = [
     ("오인용 수 (엄격, 허용 목록 없음)", lambda s: s["metrics"]["miscited_strict_count"], _int),
     ("위험도 일치율", lambda s: s["metrics"]["risk_accuracy"], _pct),
     ("긴급 판정 정확도", lambda s: s["metrics"]["emergency_accuracy"], _pct),
+    ("판정-위반 자기모순 (낮을수록 좋음)", lambda s: s["metrics"].get("self_contradiction_rate"), _pct),
+    ("  자기모순 실행 수 / 따진 실행 수", lambda s: _count_of(s), str),
     ("RAG 재현율@3", lambda s: s["metrics"]["rag_recall_at_3"], _pct),
     ("일관성", lambda s: s["metrics"]["consistency"], _pct),
     ("대안 품질 (Judge 1~5)", lambda s: s["metrics"]["alternative_score"], _fixed(2)),
@@ -246,6 +257,9 @@ def notes(chosen: dict[str, dict]) -> list[str]:
         lines.append("입력이 컨텍스트 한계에 가까운 실행이 있었다. 프롬프트가 잘렸을 수 있어 해당 버전의 수치를 그대로 믿지 않는다.")
     if any(s["metrics"]["n_errors"] for s in chosen.values()):
         lines.append("오류 난 실행은 모든 지표에서 오답으로 센다. 오류 실행 수는 전체 지표 표에 있다.")
+    if any(s["meta"].get("rescored") for s in chosen.values()):
+        lines.append("meta에 rescored가 있는 실행은 측정 뒤 저장된 결과(jsonl)로 지표를 다시 계산해 더했다. LLM은 다시 부르지 않았다.")
+    lines.append("판정-위반 자기모순은 pred 위반 목록의 구분(금지/보완)으로 규정 1장 판정을 다시 계산해 pred 판정과 다른 실행의 비율이다. v1, v2는 판정을 코드가 위반 목록에서 계산하므로 구조적으로 0이다.")
     lines.append("오인용은 gold가 긴급이면 CHG-07, 표준 변경이면 해당 STD 인용을 허용한 수치이고, 허용 목록 없는 엄격 수치를 같이 적는다.")
     lines.append("예상 비용은 eval/pricing.json의 단가가 채워진 모델만 계산한다. 비어 있으면 '-'이다.")
     return lines
@@ -354,7 +368,7 @@ def _nice_max(value: float) -> float:
 
 
 def chart_specs(chosen: dict[str, dict]) -> list[dict[str, Any]]:
-    """차트 5장: 판정 정확도, 위반 F1, 지연 p95, 토큰, 일관성."""
+    """차트 6장: 판정 정확도, 위반 F1, 지연 p95, 토큰, 일관성, 판정-위반 자기모순."""
     percent = {"label_fmt": lambda v: f"{v * 100:.0f}%", "ylim": (0, 1.12), "ticks": [0, 0.25, 0.5, 0.75, 1.0]}
 
     def series(get):
@@ -377,6 +391,9 @@ def chart_specs(chosen: dict[str, dict]) -> list[dict[str, Any]]:
          "ticks": [top_tokens * i / 4 for i in range(5)], "values": tokens},
         {"name": "consistency", "title": "일관성", "note": "같은 요청을 반복했을 때 판정이 모두 같은 비율 (반복 2회 이상일 때만)", **percent,
          "values": series(lambda s: s["metrics"]["consistency"])},
+        {"name": "self_contradiction", "title": "판정-위반 자기모순 (낮을수록 좋음)",
+         "note": "자기 위반 목록으로 규정 1장 판정을 다시 계산하면 판정이 달라지는 실행의 비율", **percent,
+         "values": series(lambda s: s["metrics"].get("self_contradiction_rate"))},
     ]
 
 

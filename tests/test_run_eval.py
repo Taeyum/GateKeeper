@@ -340,4 +340,5 @@ async def test_터미널_요약표(tmp_path):
     text = format_summary(summary)
     assert "판정 정확도" in text and "100.0%" in text and "일관성" in text
     assert "RAG 재현율@3" in text and "예상 비용/실행 (USD)" in text
+    assert "판정-위반 자기모순" in text and "0.0% (0/3)" in text  # 라벨 그대로 낸 응답이라 모순이 없다
     assert "비독립" not in text  # fake의 judge 모델은 main과 다르다

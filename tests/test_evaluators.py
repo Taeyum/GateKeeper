@@ -4,8 +4,8 @@ from datetime import datetime
 
 import pytest
 
+from app.data_loader import load_requests, load_rules
 from app.schemas import ChangeRequest, LabeledRequest, Recommendation, Violation
-from app.data_loader import load_requests
 from eval.evaluators import (
     ERROR_VERDICT,
     STRUCTURED_FIELDS,
@@ -16,6 +16,9 @@ from eval.evaluators import (
     percentile_nearest_rank,
     policy_rule_ids,
     score_case,
+    self_contradiction,
+    summarize_self_contradiction,
+    verdict_from_own_violations,
 )
 
 VALID = frozenset({f"CHG-{n:02d}" for n in range(1, 11)} | {"STD-01", "STD-02"})
@@ -363,3 +366,70 @@ def test_규정_조항_ID_목록():
     ids = policy_rule_ids()
     assert {f"CHG-{n:02d}" for n in range(1, 11)} <= ids and {"STD-01", "STD-02"} <= ids
     assert "CHG-11" not in ids and "CHG-00" not in ids
+
+
+# ---------------------------------------------------------------------------
+# 판정과 자기 위반 목록의 모순 (리뷰 J1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("verdict", "violations", "recomputed"),
+    [
+        ("반려", ["CHG-01", "CHG-06"], "반려"),
+        ("조건부 승인", ["CHG-01", "CHG-06"], "반려"),  # 금지 조항을 적고도 조건부 승인: v0 dev의 대표 모순
+        ("조건부 승인", ["CHG-02", "CHG-03", "CHG-09"], "반려"),  # 금지가 섞인 보완
+        ("조건부 승인", ["CHG-04", "CHG-08"], "조건부 승인"),
+        ("승인", ["CHG-04"], "조건부 승인"),
+        ("반려", ["CHG-04"], "조건부 승인"),
+        ("승인", [], "승인"),
+        ("자동 승인", [], "자동 승인"),
+        ("조건부 승인", [], "승인"),
+        ("반려", [], "승인"),
+        ("자동 승인", ["CHG-10"], "반려"),
+    ],
+)
+def test_자기_위반_목록으로_다시_계산한_판정(verdict, violations, recomputed):
+    assert verdict_from_own_violations(verdict, violations, load_rules()) == recomputed
+    assert self_contradiction(verdict, violations, load_rules()) is (verdict != recomputed)
+
+
+def test_규정에_구분이_없는_ID와_절차_조항은_계산에서_뺀다():
+    rules = load_rules()
+    # CHG-07은 procedure, STD-01은 표준 목록, CHG-99는 지어낸 ID다. 구분이 없으니 위반으로 세지 않는다.
+    assert self_contradiction("승인", ["CHG-07", "STD-01", "CHG-99"], rules) is False
+    assert self_contradiction("자동 승인", ["STD-02"], rules) is False
+    assert self_contradiction("조건부 승인", ["CHG-99", "CHG-04"], rules) is False
+
+
+def test_pred가_스스로_단_severity는_보지_않고_rules_json의_구분을_쓴다():
+    d01 = gold("REQ-D01")
+    liar = Violation(rule_id="CHG-01", severity="fixable", evidence="x")  # CHG-01은 규정상 금지 조항
+    case = score(d01, Prediction(structured=structured_of(d01), recommendation=recommendation_of(d01, verdict="조건부 승인", violations=[liar])))
+    assert case.self_contradiction is True
+
+
+def test_오류_난_실행은_자기모순을_정의할_수_없어_None이다():
+    assert self_contradiction(ERROR_VERDICT, [], load_rules()) is None
+    case = score(gold("REQ-D01"), Prediction(error="TimeoutError"))
+    assert case.self_contradiction is None
+
+
+def test_라벨대로_낸_예측은_모순이_없다():
+    for item in load_requests("dev"):
+        assert score(item, perfect(item)).self_contradiction is False, item.request_id
+
+
+def test_자기모순_집계는_오류_실행을_분모에서_뺀다():
+    d01, d02 = gold("REQ-D01"), gold("REQ-D02")
+    contradicting = perfect(d01, verdict="조건부 승인")  # 금지 위반 5개를 적고 조건부 승인
+    cases = [
+        score(d01, perfect(d01)),
+        score(d01, contradicting, rep=1),
+        score(d02, Prediction(error="TimeoutError")),
+    ]
+    summary = aggregate(cases, reps=2)
+    assert (summary.self_contradiction_count, summary.self_contradiction_n) == (1, 2)
+    assert summary.self_contradiction_rate == 0.5 and summary.n_errors == 1
+    assert summarize_self_contradiction([None, None]) == (0, 0, None)
+    assert aggregate([], 1).self_contradiction_rate is None
