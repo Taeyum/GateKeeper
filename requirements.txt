@@ -10,5 +10,9 @@ langchain-anthropic>=1.7
 langchain-ollama>=1.0
 langchain-openai>=1.0
 
+# MCP 서버와 클라이언트 (mcp SDK는 fastmcp가 함께 설치한다)
+fastmcp>=4.1
+
 # 테스트
 pytest>=8.0
+pytest-asyncio>=1.0
