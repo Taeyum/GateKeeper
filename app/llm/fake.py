@@ -59,7 +59,16 @@ def _as_text(item: Any) -> str:
         return item
     if isinstance(item, BaseModel):
         return item.model_dump_json()
-    return json.dumps(item, ensure_ascii=False)
+    return json.dumps(item, ensure_ascii=False, default=str)
+
+
+def _fake_tokens(text: str) -> int:
+    """글자 4개를 토큰 1개로 센다. 실제 토크나이저가 아니라 결정론적인 가짜 값이다."""
+    return max(1, len(text) // 4)
+
+
+def _message_text(message: BaseMessage) -> str:
+    return message.content if isinstance(message.content, str) else json.dumps(message.content, ensure_ascii=False)
 
 
 class FakeChatModel(BaseChatModel):
@@ -84,17 +93,30 @@ class FakeChatModel(BaseChatModel):
         run_manager: Any = None,
         **kwargs: Any,
     ) -> ChatResult:
-        message = AIMessage(content=_as_text(self._next()))
+        text = _as_text(self._next())
+        input_tokens = sum(_fake_tokens(_message_text(m)) for m in messages)
+        output_tokens = _fake_tokens(text)
+        message = AIMessage(
+            content=text,
+            # 실제 provider처럼 호출 수와 토큰 집계(app/llm/usage.py)가 fake에서도 동작하게 한다.
+            usage_metadata={
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+            },
+            response_metadata={"model_name": f"fake-{self.role}"},
+        )
         return ChatResult(generations=[ChatGeneration(message=message)])
 
     def with_structured_output(
         self, schema: Any, *, include_raw: bool = False, **kwargs: Any
     ) -> Runnable:
-        def _invoke(_input: Any) -> Any:
-            item = self._next()
-            parsed = _coerce(schema, item)
+        """응답을 _generate 경로로 꺼낸 뒤 스키마로 바꾼다. 그래야 콜백(호출 수, 토큰)이 실제 모델처럼 불린다."""
+
+        def _parse(message: AIMessage) -> Any:
+            parsed = _coerce(schema, message.content)
             if include_raw:
-                return {"raw": AIMessage(content=_as_text(item)), "parsed": parsed, "parsing_error": None}
+                return {"raw": message, "parsed": parsed, "parsing_error": None}
             return parsed
 
-        return RunnableLambda(_invoke)
+        return self | RunnableLambda(_parse)
