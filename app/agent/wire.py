@@ -92,3 +92,13 @@ class WireRecommendation(BaseModel):
 class V0Wire(BaseModel):
     structured: WireChangeRequest
     recommendation: WireRecommendation
+
+
+def change_request_schema(provider: str) -> type[BaseModel]:
+    """parse_request가 provider에 보낼 구조화 출력 스키마. anthropic은 선택 필드가 없는 와이어 모델을 쓴다."""
+    return WireChangeRequest if provider == "anthropic" else ChangeRequest
+
+
+def to_change_request(result: BaseModel) -> ChangeRequest:
+    """구조화 출력 결과를 도메인 ChangeRequest로 돌린다. 도메인 모델이면 그대로."""
+    return result.to_domain() if isinstance(result, WireChangeRequest) else result  # type: ignore[return-value]

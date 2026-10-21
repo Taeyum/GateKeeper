@@ -66,6 +66,11 @@ def render_structure_rules() -> str:
     return load_prompt("structure_rules.md").format(work_duration_minutes=minutes).strip()
 
 
+def render_service_list() -> str:
+    """서비스 id, 이름, 종류를 한 줄씩. parse_request가 target을 CMDB 철자 그대로 쓰게 하려는 것이다."""
+    return "\n".join(f"- {service.id}: {service.name} ({service.type})" for service in load_cmdb().services)
+
+
 def render_static_context() -> dict[str, str]:
     """규정 원문과 JSON 데이터를 프롬프트에 넣을 문자열로 만든다. 로더로 한 번 검증해서 깨진 데이터를 일찍 드러낸다."""
     load_cmdb(), load_change_calendar(), load_open_incidents()
