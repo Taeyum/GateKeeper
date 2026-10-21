@@ -392,6 +392,13 @@ def test_조건은_구체적인_값과_예시로_쓰게_하고_일반론과_지�
     assert "{" not in text.replace("{policy}", "").replace("{calendar}", "")
 
 
+def test_근거가_없으면_예시를_지어내지_말고_형식만_쓰게_한다():
+    """Haiku v1이 변경 사유가 비었는데 인덱스 추가 예시를 만든 사례(REQ-D08, 3점)를 막는 지시다."""
+    line = next(row for row in load_prompt("decide.md").splitlines() if row.startswith("- conditions:"))
+    assert "변경 사유나 데이터에 근거가 없으면 구체 예시를 지어내지 말고 무엇을 적어야 하는지 형식만 쓴다" in line
+    assert '변경 사유가 적혀 있지 않으면 롤백 예시를 만들지 않고 "되돌리는 절차를 한 줄 이상 적는다"처럼 쓴다' in line
+
+
 def test_조건에_쓸_값은_코드가_데이터에서_읽어_입력에_넣는다():
     request = request_of("REQ-D01")
     text = render_for("REQ-D01", "반려", "firewall")
