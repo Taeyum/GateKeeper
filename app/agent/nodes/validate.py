@@ -13,6 +13,7 @@ decide가 쓴 권고의 설명이 규정 검사 결과와 모순되지 않는지
 진행한다. 재작성 횟수는 metrics의 validator_rewrites, 끝내 못 끝낸 횟수는 validator_incomplete다.
 """
 
+import json
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -21,14 +22,18 @@ from langgraph.graph import END
 from pydantic import BaseModel, Field
 
 from app import rules_engine
+from app.agent.nodes.decide import ALTERNATIVE_VERDICTS, EXPIRY_RULE_ID, render_history_section
+from app.agent.nodes.impact_agent import work_window
 from app.agent.prompting import load_prompt
 from app.agent.results import ValidationState
 from app.agent.state import GKState
 from app.config import get_settings
-from app.data_loader import load_rules
+from app.data_loader import load_cmdb, load_rules
 from app.llm.factory import get_llm, structured_llm
+from app.rules_engine._format import fmt_range
+from app.rules_engine.context import effective_change_type
 from app.rules_engine.emergency import RULE_ID as EMERGENCY_RULE_ID
-from app.schemas import PolicyCheckResult, Recommendation, RulesConfig
+from app.schemas import ChangeRequest, PolicyCheckResult, Recommendation, RulesConfig
 
 MAX_REWRITES = 1
 INCOMPLETE_WARNING = "근거 검증 미완료"
@@ -92,7 +97,46 @@ def code_checks(
     return reasons
 
 
-def render_validation_input(rec: Recommendation, check: PolicyCheckResult) -> str:
+def render_facts(state: GKState, rec: Recommendation, rules: RulesConfig) -> str:
+    """설명이 근거로 삼아도 되는 사실. decide가 설명을 쓸 때 본 것과 같은 자료다.
+
+    검증자에게 판정, 위반, 설명만 보여 주면 설명이 정당하게 쓴 영향도, 유사 장애 이력, 작업 구간, 파트너 IP를
+    전부 "입력에 없는 근거 없는 주장"으로 지적한다(dev 첫 측정에서 10건 중 7건이 이 이유로 "근거 검증 미완료"가 됐다).
+    """
+    request: ChangeRequest = state["structured"]
+    service = load_cmdb().get_service(request.target)
+    effective = effective_change_type(request.change_type, state.get("standard_change_id") is not None)
+    window = work_window(request)
+    impact = state.get("impact")
+    if impact is None:
+        impact_text = "해당 없음 (표준 변경은 영향도 검사를 생략한다)"
+    else:
+        impact_text = "확인 불가" if impact.status == "unavailable" else impact.summary
+    notes = "\n".join(f"  - {n.rule_id}: {n.note}" for n in state["policy"].notes) or "  - 없음"
+    parts = [
+        f"- 요청 대상: {request.target} ({service.tier if service else '등급 불명'}), 변경 유형: {effective}",
+        f"- 작업 구간: {fmt_range(*window) if window else '알 수 없음'}",
+        f"- 구조화된 요청: {json.dumps(request.model_dump(mode='json', exclude_none=True), ensure_ascii=False)}",
+        f"- 영향도 요약: {impact_text}",
+        f"- 조항별 설명 (규정 원문을 읽은 보조 에이전트):\n{notes}",
+    ]
+    history_section = render_history_section(
+        state.get("history"), list(state.get("similar_incidents", [])), bool(state.get("has_similar_incident", False))
+    )
+    if history_section is not None:
+        parts.append("- 유사 장애 이력 (위험도 상향 여부는 코드가 이력 전체에서 정했다):\n" + "\n".join(f"  {line}" for line in history_section.splitlines()))
+    plan = state.get("alternative")
+    if plan is not None and plan.start is not None and plan.end is not None:
+        parts.append(f"- 대안 작업 시각: {fmt_range(plan.start, plan.end)} (규칙 엔진이 검증했거나 엔진이 찾은 값)")
+    if rec.verdict in ALTERNATIVE_VERDICTS and effective == "firewall":
+        days = rules.get_rule(EXPIRY_RULE_ID).params["max_days"]  # type: ignore[union-attr]
+        partners = ", ".join(f"{p.partner} {p.ip} ({p.purpose})" for p in load_cmdb().partners)
+        parts.append(f"- 등록된 파트너 출발지: {partners}")
+        parts.append(f"- 외부 출발지의 허용 기한은 최대 {days}일이다. 대안 문장의 만료 날짜는 코드가 작업일에 이 일수를 더해 채운 값이다")
+    return "\n".join(parts)
+
+
+def render_validation_input(rec: Recommendation, check: PolicyCheckResult, facts: str) -> str:
     severity = {"forbidden": "금지", "fixable": "보완"}
     violations = "\n".join(f"- {v.rule_id} ({severity.get(v.severity, v.severity)}): {v.evidence}" for v in rec.violations) or "- 없음"
     exempted = "\n".join(f"- {v.rule_id}: {v.evidence}" for v in check.exempted) or "- 없음"
@@ -101,6 +145,7 @@ def render_validation_input(rec: Recommendation, check: PolicyCheckResult) -> st
         f"- 판정: {rec.verdict}\n- 위험도: {rec.risk or '없음'}\n\n"
         f"## 위반 조항 (규칙 엔진)\n{violations}\n\n"
         f"## 유효한 긴급 변경으로 면제된 조항\n{exempted}\n\n"
+        f"## 근거 자료 (설명이 근거로 삼아도 되는 사실)\n{facts}\n\n"
         f"## 검증할 설명\n{rec.explanation}\n\n"
         f"## 검증할 조건부 대안\n{rec.conditional_alternative or '없음'}"
     )
@@ -136,7 +181,11 @@ async def validate(state: GKState, config: RunnableConfig) -> dict:
     if not reasons:  # 코드 검사를 통과했을 때만 LLM 검사를 한다 (이미 실패면 호출을 아낀다)
         settings = get_settings()
         chain = structured_llm(get_llm("main", settings), ValidationCheck, settings)
-        messages = [SystemMessage(content=load_prompt("validate.md")), HumanMessage(content=render_validation_input(rec, check))]
+        facts = render_facts(state, rec, load_rules())
+        messages = [
+            SystemMessage(content=load_prompt("validate.md")),
+            HumanMessage(content=render_validation_input(rec, check, facts)),
+        ]
         try:
             verdict = await chain.ainvoke(messages, config)
         except Exception as exc:  # 판정은 이미 코드가 정했다. 검증을 못 했다는 사실만 남기고 막지 않는다

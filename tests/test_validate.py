@@ -12,6 +12,7 @@ from app.agent.nodes.validate import (
     MAX_REWRITES,
     ValidationCheck,
     code_checks,
+    render_facts,
     render_validation_input,
     route_after_validate,
     validate,
@@ -214,11 +215,78 @@ def test_분기_함수는_실패하고_끝내지_않았을_때만_decide로_돌�
     assert route_after_validate({"validation": ValidationState(passed=False, rewrites=1, incomplete=True)}) == END
 
 
-def test_LLM에_보내는_입력은_코드_계산_결과와_설명을_담고_본문_값은_없다():
+def test_LLM에_보내는_입력은_코드_계산_결과와_근거_자료와_설명을_담는다():
     state = {"policy": SubagentResult(tool_output=PolicyCheckResult().model_dump(mode="json"))}
     rec = Recommendation(verdict="승인", risk="낮음", explanation="위반이 없어요.")
-    text = render_validation_input(rec, PolicyCheckResult.model_validate(state["policy"].tool_output))
-    assert "- 판정: 승인" in text and "## 검증할 설명\n위반이 없어요." in text and "## 검증할 조건부 대안\n없음" in text
+    text = render_validation_input(rec, PolicyCheckResult.model_validate(state["policy"].tool_output), "- 요청 대상: x")
+    assert "- 판정: 승인" in text and "## 근거 자료 (설명이 근거로 삼아도 되는 사실)\n- 요청 대상: x" in text
+    assert "## 검증할 설명\n위반이 없어요." in text and "## 검증할 조건부 대안\n없음" in text
+
+
+# ---------------------------------------------------------------------------
+# 근거 자료: 검증자도 decide가 본 사실을 본다 (dev 첫 측정의 회귀)
+# ---------------------------------------------------------------------------
+# 처음에는 검증자에게 판정, 위반, 설명만 보냈다. 설명이 정당하게 쓴 영향도, 유사 장애 이력, 파트너 IP를 모두
+# "입력에 없는 근거 없는 주장"으로 지적해서 dev 10건 중 7건이 "근거 검증 미완료"가 됐다.
+
+
+def history_keys(*history_ids: str, has_similar: bool) -> dict:
+    by_id = {h.history_id: h for h in data_loader.load_history()}
+    return {
+        "history": SubagentResult(summary="과거 사례 요약"),
+        "similar_incidents": [by_id[i].model_dump(mode="json") for i in history_ids],
+        "has_similar_incident": has_similar,
+    }
+
+
+async def test_근거_자료에_영향도_이력_작업_구간_조항_설명이_들어간다():
+    state = await decided("REQ-D03", **history_keys("HIS-034", "HIS-001", has_similar=True))
+    text = render_facts(state, state["recommendation"], load_rules())
+    assert "- 요청 대상: billing-db (Tier-2), 변경 유형: db_change" in text
+    assert "- 작업 구간: 10/28(수) 10:00~11:00" in text and '"target": "billing-db"' in text
+    assert "- 영향도 요약: 영향도 요약" in text and "- 조항별 설명 (규정 원문을 읽은 보조 에이전트):" in text
+    assert "- 유사 장애 이력 (위험도 상향 여부는 코드가 이력 전체에서 정했다):" in text
+    assert "같은 서비스와 유형의 장애 이력이 있어 코드가 위험도를 한 단계 올렸다." in text and "HIS-034 (billing-db, db_change, 결과 장애)" in text
+    assert "교훈:" in text
+
+
+async def test_방화벽_대안이면_파트너_출발지와_최대_일수와_대안_작업_시각이_들어간다():
+    state = await decided("REQ-D01")
+    text = render_facts(state, state["recommendation"], load_rules())
+    for partner in data_loader.load_cmdb().partners:
+        assert f"{partner.partner} {partner.ip} ({partner.purpose})" in text
+    max_days = load_rules().get_rule("CHG-09").params["max_days"]
+    assert f"허용 기한은 최대 {max_days}일이다. 대안 문장의 만료 날짜는 코드가 작업일에 이 일수를 더해 채운 값이다" in text
+    assert "- 대안 작업 시각: " in text and "(규칙 엔진이 검증했거나 엔진이 찾은 값)" in text
+
+
+async def test_표준_변경이거나_이력이_없는_경로는_해당_자료가_없음을_밝힌다():
+    state = await decided("REQ-D04")
+    text = render_facts(state, state["recommendation"], load_rules())
+    assert "- 영향도 요약: 해당 없음 (표준 변경은 영향도 검사를 생략한다)" in text
+    assert "유사 장애 이력" not in text and "등록된 파트너 출발지" not in text  # 이력 검사를 안 돈 경로이고 방화벽 대안도 아니다
+
+
+@pytest.fixture
+def validate_recorder(monkeypatch):
+    holder: list[Recorder] = []
+    real = node.structured_llm
+
+    def wrapped(llm, schema, settings=None):
+        holder.append(Recorder(real(llm, schema, settings)))
+        return holder[-1]
+
+    monkeypatch.setattr(node, "structured_llm", wrapped)
+    return holder
+
+
+async def test_검증_LLM은_decide가_본_근거_자료를_함께_받는다(validate_recorder):
+    state = await decided("REQ-D01", **history_keys("HIS-049", "HIS-077", has_similar=True))
+    await run(state, [OK])
+    system, user = validate_recorder[0].calls[0]
+    assert "근거 자료" in system.content and "모두 근거가 있다" in system.content  # 근거로 삼아도 되는 것을 프롬프트가 알려 준다
+    for fact in ("영향도 요약", "HIS-049", "교훈:", "위험도를 한 단계 올렸다", "B페이먼츠 203.0.113.10/32", "10/30(금) 20:00~21:00"):
+        assert fact in user.content, fact
 
 
 # ---------------------------------------------------------------------------
