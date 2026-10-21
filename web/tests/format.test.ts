@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatMonth, formatRange, formatSubmitted, formatWhen } from '../src/lib/format'
-import { requestTitle, statusBadge, verdictBadge } from '../src/lib/presentation'
+import { requestTitle, showStatusChip, statusBadge, verdictBadge } from '../src/lib/presentation'
 
 describe('시각 표기 (항상 한국 시간)', () => {
   it('정각이면 분을 생략한다', () => {
@@ -52,5 +52,13 @@ describe('요청 이름과 배지', () => {
     expect(verdictBadge('자동 승인')).toMatchObject({ label: '자동 승인', tone: 'auto' })
     expect(statusBadge('awaiting_approval')).toMatchObject({ label: '승인자 확인 중', tone: 'wait' })
     expect(statusBadge('manual_review').label).toBe('수동 검토')
+  })
+
+  it('자동 승인 결과에서만 상태 칩을 숨겨 같은 배지가 두 번 나오지 않게 한다', () => {
+    expect(showStatusChip('자동 승인', 'auto_approved')).toBe(false)
+    // 권고(승인)와 처리 상태(승인자 확인 중, 승인됨)는 다른 정보라 그대로 보여 준다
+    expect(showStatusChip('승인', 'approved')).toBe(true)
+    expect(showStatusChip('승인', 'awaiting_approval')).toBe(true)
+    expect(showStatusChip('반려', 'awaiting_approval')).toBe(true)
   })
 })

@@ -16,7 +16,7 @@ import VerdictSummary from '@/components/VerdictSummary.vue'
 import { EMERGENCY_NOTICE, groupViolations } from '@/copy/rules'
 import { RequestFlow, type Connection, type EventSourceLike } from '@/lib/flow'
 import { formatSubmitted } from '@/lib/format'
-import { requestTitle } from '@/lib/presentation'
+import { requestTitle, STANDARD_LABEL } from '@/lib/presentation'
 import { buildRetryText, timelineSteps, type ReviewDetail } from '@/lib/review'
 
 const props = defineProps<{ id: string }>()
@@ -93,6 +93,10 @@ const tierNote = computed(() => {
   return `${impact.name.replace(/\s*\(.*\)$/, '')}는 핵심 서비스라서 위험도가 높게 표시돼요.`
 })
 
+const standardLabel = computed(() => {
+  const id = detail.value?.structured?.standard_change_id
+  return id ? STANDARD_LABEL[id] : null
+})
 const isEmergency = computed(() => Boolean(detail.value?.structured?.is_emergency || detail.value?.recommendation?.post_report_required))
 const retryText = computed(() => (detail.value ? buildRetryText(detail.value) : null))
 const canRetry = computed(() => detail.value?.status !== 'approved' && detail.value?.status !== 'auto_approved' && hasFixes.value)
@@ -198,6 +202,7 @@ async function retry() {
           :has-similar-incident="detail.has_similar_incident"
           :fix-count="fixes.groups.length"
           :tier-note="tierNote"
+          :standard-label="standardLabel"
         />
 
         <section v-if="detail.approval" class="card decision" aria-labelledby="decision-title">

@@ -5,6 +5,7 @@ import SimilarBadge from './SimilarBadge.vue'
 import StatusBadge from './StatusBadge.vue'
 import RiskMeter from './RiskMeter.vue'
 import VerdictBadge from './VerdictBadge.vue'
+import { showStatusChip } from '@/lib/presentation'
 
 // 결과 화면 맨 위: 시스템 권고를 한 줄 결론으로 말하고, 위험도 / 비슷한 사고 / 처리 상태를 칩으로 보여 준다.
 const props = defineProps<{
@@ -14,6 +15,8 @@ const props = defineProps<{
   /** 고쳐야 할 묶음의 수 */
   fixCount: number
   tierNote: string | null
+  /** 표준 변경이면 그 이름(예: 로그 레벨 변경). 자동 승인 결과에서 상태 칩 대신 보여 준다. */
+  standardLabel?: string | null
 }>()
 
 const copy = computed(() => {
@@ -51,7 +54,11 @@ const copy = computed(() => {
         <RiskMeter :risk="recommendation.risk" />
       </span>
       <SimilarBadge v-if="hasSimilarIncident" label="비슷한 사고 있음" size="md" />
-      <StatusBadge :status="status" />
+      <StatusBadge v-if="showStatusChip(recommendation.verdict, status)" :status="status" />
+      <span v-if="standardLabel" class="chip">
+        <span class="chip-label">종류</span>
+        표준 변경 ({{ standardLabel }})
+      </span>
     </div>
     <p v-if="tierNote" class="note">{{ tierNote }}</p>
     <ul v-if="recommendation.warnings.length" class="warnings">

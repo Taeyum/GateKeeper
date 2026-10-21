@@ -41,6 +41,14 @@ export function statusBadge(status: RequestStatus): BadgeSpec {
   }
 }
 
+/**
+ * 결과 요약의 상태 칩을 보여 줄지. 자동 승인은 판정 배지(자동 승인)와 상태 칩(자동 승인)이 같은 말이라
+ * 위아래로 두 번 나오지 않게 칩을 숨긴다. 그 밖에는 권고(승인 권고)와 처리 상태(승인자 확인 중, 승인됨)가 다른 정보다.
+ */
+export function showStatusChip(verdict: Verdict, status: RequestStatus): boolean {
+  return !(verdict === '자동 승인' && status === 'auto_approved')
+}
+
 /** 위험도 막대: 채워지는 칸 수 */
 export const RISK_LEVEL: Record<Risk, 1 | 2 | 3> = { 낮음: 1, 중간: 2, 높음: 3 }
 
