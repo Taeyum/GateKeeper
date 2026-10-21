@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from app import data_loader
+from app.agent.errors import ReviewIncomplete
 from app.agent.graph import build_graph
 from app.agent.mcp_client import MCPClient
 from app.agent.prompting import file_sha256, prompt_hashes
@@ -293,15 +294,16 @@ def console_run_line(split: str, index: int, total: int, case: CaseScore, run: S
 async def _warm_up(graph, item: LabeledRequest, timeout: float) -> str | None:
     """첫 요청 1건을 추적 없이 한 번 실행하고 버린다. 모델 로드와 정적 접두사 캐시를 함께 데운다.
 
-    출력 형식 실패(ValueError)는 측정할 모델 행동이라 넘어간다. 그 밖의 실패(연결, 모델 없음, 인증, 시간 초과)는
-    설정이 잘못된 것이라 멈춘다. 결과는 기록하지도 출력하지도 않는다.
+    출력 형식 실패(ValueError)와 판정을 만들지 못한 경우(ReviewIncomplete, 예: 모델이 대상을 못 뽑음)는 측정할 시스템
+    행동이라 넘어간다. 그 밖의 실패(연결, 모델 없음, 인증, 시간 초과)는 설정이 잘못된 것이라 멈춘다.
+    결과는 기록하지도 출력하지도 않는다.
     """
     state = initial_state(item, mask_secrets(item.text))
     config = {"configurable": {"thread_id": "warmup"}}
     try:
         with tracing(False):
             await asyncio.wait_for(graph.ainvoke(state, config), timeout)
-    except ValueError as exc:
+    except (ValueError, ReviewIncomplete) as exc:
         return type(exc).__name__
     except Exception as exc:
         raise RunConfigError(f"warm-up 실행이 실패했다 ({type(exc).__name__}). 모델과 서버 설정을 확인한다.") from None

@@ -124,6 +124,23 @@ async def test_v1_실행은_MCP_서버를_한_번_띄워_재사용하고_끝나�
     assert len(records) == 6 and all(r["self_contradiction"] is False for r in records)
 
 
+async def test_v1이_판정을_못_만들어도_warm_up은_멈추지_않고_오류_실행으로_기록한다(tmp_path):
+    """ReviewIncomplete(대상을 못 뽑음 등)는 측정할 시스템 행동이다. 설정 오류로 멈추면 첫 요청이 우연히 실패한 것만으로 평가가 시작되지 못한다."""
+    items = load_requests("dev")[:3]
+    _queue_v1(items)
+    wrong = ChangeRequest(target="payment-service", change_type="deploy")  # CMDB에 없는 대상: 다시 물어도 같다
+    set_fake_responses_for("main", ChangeRequest, [wrong] * 8)  # warm-up 1건 + 요청 3건, 건마다 2회 호출
+    outcome = await run_evaluation(
+        _cfg(tmp_path, version="v1"), now=lambda: FIXED, out=lambda _: None, mcp_factory=lambda: MCPClient(build_server())
+    )
+    metrics = outcome.summary["metrics"]
+    assert outcome.summary["meta"]["warmup_error"] == "ReviewIncomplete"
+    assert (metrics["n_runs"], metrics["n_errors"], metrics["verdict_accuracy"]) == (3, 3, 0.0)
+    assert metrics["self_contradiction_n"] == 0  # 오류 난 실행은 자기모순을 따질 수 없다
+    records = [json.loads(line) for line in outcome.jsonl_path.read_text(encoding="utf-8").splitlines()]
+    assert {r["error"] for r in records} == {"ReviewIncomplete"} and {r["verdict_pred"] for r in records} == {"ERROR"}
+
+
 async def test_v1_실행이_중간에_실패해도_MCP_서버는_닫힌다(tmp_path):
     clients: list[MCPClient] = []
 
