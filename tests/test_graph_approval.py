@@ -5,6 +5,7 @@
 """
 
 import json
+import logging
 
 import pytest
 from langgraph.types import Command
@@ -17,7 +18,7 @@ from app.audit import AuditLog
 from app.mcp_server.server import build_server
 from app.persistence.checkpointer import open_checkpointer, thread_config
 from eval.harness import initial_state
-from tests._graph_helpers import gold, queue
+from tests._graph_helpers import gold, queue, reset_serde_warnings, serde_warnings
 from tests._history import make_index
 
 DECISION = {"decision": "approve", "approver": "박CAB", "comment": "확인했습니다", "at": "2026-10-29T16:20:00+09:00"}
@@ -175,6 +176,19 @@ async def test_K3_작은_모델이_표준_변경을_배포로_분류하면_자�
     assert MISMATCH_WARNING in waiting.values["recommendation"].warnings
     assert waiting.next == ("approval_gate",)  # 승인만 사람이 한다
     assert audit_lines(audit) == []
+
+
+async def test_서브그래프_체크포인트까지_모두_경고_없이_읽힌다(mcp, saver, audit, caplog, monkeypatch):
+    """직렬화 허용 목록에서 서브그래프 상태의 모델이 빠지면 그 체크포인트의 값이 조용히 막힌다(Blocked deserialization)."""
+    reset_serde_warnings(monkeypatch)
+    caplog.set_level(logging.WARNING)
+    graph = build_graph("v2", mcp=mcp, checkpointer=saver, audit=audit, approval=True)
+    queue("REQ-D01")
+    await start(graph, "REQ-D01")
+
+    checkpoints = [checkpoint async for checkpoint in saver.alist(None)]  # 부모와 서브그래프의 체크포인트 전부
+    assert len({c.config["configurable"].get("checkpoint_ns", "") for c in checkpoints}) > 1  # 서브그래프 것이 실제로 있다
+    assert serde_warnings(caplog) == []
 
 
 async def test_v1_그래프에도_같은_승인_단계가_붙는다(mcp, saver, audit):

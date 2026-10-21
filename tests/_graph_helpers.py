@@ -4,6 +4,8 @@
 dev 라벨만 쓴다(CLAUDE.md 절대 규칙 1).
 """
 
+from langgraph.checkpoint.serde import jsonplus
+
 from app import rules_engine
 from app.agent.nodes.classify import RouteGuess
 from app.agent.nodes.decide import DecideDraft
@@ -14,6 +16,20 @@ from app.agent.nodes.validate import ValidationCheck
 from app.data_loader import load_requests
 from app.llm.fake import set_fake_responses_for
 from app.schemas import ChangeRequest, LabeledRequest
+
+# 체크포인트의 직렬화 허용 목록에 빠진 모델이 있으면 LangGraph가 이 문구 중 하나로 경고한다(타입마다 프로세스에서 한 번만).
+SERDE_WARNING_MARKERS = ("unregistered type", "Blocked deserialization", "Could not reconstruct")
+
+
+def reset_serde_warnings(monkeypatch) -> None:
+    """다른 테스트가 먼저 경고를 냈어도 이 테스트가 볼 수 있게 한 번만 내는 기록을 비운다."""
+    for name in ("_warned_unregistered_types", "_warned_blocked_types", "_warned_unreconstructable_types"):
+        monkeypatch.setattr(jsonplus, name, set())
+
+
+def serde_warnings(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if any(marker in r.getMessage() for marker in SERDE_WARNING_MARKERS)]
+
 
 OK = ValidationCheck(consistent=True, issues=[])
 BAD = ValidationCheck(consistent=False, issues=["설명이 판정과 다르다"])

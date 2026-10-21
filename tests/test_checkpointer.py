@@ -9,7 +9,6 @@ import logging
 from datetime import datetime
 
 import pytest
-from langgraph.checkpoint.serde import jsonplus
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
@@ -27,6 +26,7 @@ from app.persistence.checkpointer import (
     thread_config,
 )
 from app.schemas import ChangeRequest, Recommendation, Violation
+from tests._graph_helpers import reset_serde_warnings, serde_warnings
 
 REQUEST = ChangeRequest(target="payments-db", change_type="firewall")
 RECOMMENDATION = Recommendation(
@@ -85,11 +85,13 @@ async def run_until_gate(graph, request_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_허용_목록은_GKState의_pydantic_모델을_중첩까지_모두_담는다():
+def test_허용_목록은_부모와_서브그래프_상태의_pydantic_모델을_중첩까지_모두_담는다():
     names = {model.__name__ for model in state_models()}
     # Recommendation 안의 Violation, SubagentResult 안의 RuleNote처럼 필드에 중첩된 모델도 포함한다
     expected = {"ChangeRequest", "Recommendation", "Violation", "SubagentResult", "RuleNote", "ValidationState", "AlternativePlan"}
     assert expected | {"ApprovalRecord"} <= names  # 승인자의 결정도 체크포인트에 저장된다
+    # 서브에이전트 서브그래프의 상태(Tool 원본)도 같은 thread의 체크포인트로 저장된다
+    assert {"PolicyCheckResult", "ServiceInfo", "CalendarResult", "HistoryHit"} <= names
     assert ("app.schemas", "ChangeRequest") in state_allowlist()
 
 
@@ -169,14 +171,10 @@ async def test_메모리_모드도_같은_인터페이스다():
 # ---------------------------------------------------------------------------
 
 
-def unregistered_warnings(caplog) -> list[str]:
-    return [r.getMessage() for r in caplog.records if "unregistered type" in r.getMessage()]
-
-
 @pytest.fixture
 def fresh_warning_state(monkeypatch):
     """LangGraph는 같은 타입의 경고를 프로세스에서 한 번만 낸다. 다른 테스트가 먼저 냈어도 이 테스트가 보게 비운다."""
-    monkeypatch.setattr(jsonplus, "_warned_unregistered_types", set())
+    reset_serde_warnings(monkeypatch)
 
 
 async def test_우리_팩토리는_pydantic_상태를_읽어도_미등록_타입_경고가_없다(tmp_path, caplog, fresh_warning_state):
@@ -186,7 +184,7 @@ async def test_우리_팩토리는_pydantic_상태를_읽어도_미등록_타입
         await run_until_gate(build(saver), "REQ-0001")
     async with open_checkpointer(path) as saver:
         await build(saver).aget_state(thread_config("REQ-0001"))
-    assert unregistered_warnings(caplog) == []
+    assert serde_warnings(caplog) == []
 
 
 async def test_대조군_기본_saver는_같은_상태를_읽을_때_경고를_낸다(tmp_path, caplog, fresh_warning_state):
@@ -197,4 +195,4 @@ async def test_대조군_기본_saver는_같은_상태를_읽을_때_경고를_�
         await run_until_gate(build(saver), "REQ-0001")
     async with AsyncSqliteSaver.from_conn_string(str(path)) as saver:
         await build(saver).aget_state(thread_config("REQ-0001"))
-    assert unregistered_warnings(caplog) != []
+    assert serde_warnings(caplog) != []
