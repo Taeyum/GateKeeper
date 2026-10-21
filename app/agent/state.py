@@ -10,7 +10,7 @@ from typing import Annotated, Any
 
 from typing_extensions import TypedDict
 
-from app.agent.results import AlternativePlan, SubagentResult
+from app.agent.results import AlternativePlan, SubagentResult, ValidationState
 from app.schemas import ChangeRequest, Recommendation, Route, StandardId
 
 
@@ -48,6 +48,8 @@ class GKState(TypedDict, total=False):
     recommendation: Recommendation
     # ④ decide가 대안 문장을 조립하기 전의 구성 요소 (7단계 API의 alternative_diff 계산용)
     alternative: AlternativePlan
+    # ⑤ validate 결과 (v2). 실패하면 사유를 들고 decide로 1회 돌아간다.
+    validation: ValidationState
     # 승인자에게 보여 줄 경고. 노드마다 더하고 decide가 Recommendation.warnings로 옮긴다.
     warnings: Annotated[list[str], operator.add]
     errors: Annotated[list[str], operator.add]

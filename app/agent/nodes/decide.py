@@ -204,6 +204,17 @@ def retry_message(draft: DecideDraft, problems: list[str]) -> HumanMessage:
     )
 
 
+def rewrite_message(previous_explanation: str, reasons: list[str]) -> HumanMessage:
+    """validate가 근거 검증에 실패시켰을 때 decide가 설명을 다시 쓰도록 붙이는 메시지 (재작성 최대 1회)."""
+    listed = "\n".join(f"- {reason}" for reason in reasons)
+    return HumanMessage(
+        content=(
+            f"앞서 쓴 설명이 근거 검증을 통과하지 못했다. 검증 결과:\n{listed}\n\n앞선 설명:\n{previous_explanation}\n\n"
+            "위반 목록, 판정, 위험도는 바꾸지 않는다. 입력의 코드 계산 결과와 어긋나는 부분을 고쳐 전체 필드를 다시 출력한다."
+        )
+    )
+
+
 def _lines(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items) or "- 없음"
 
@@ -343,6 +354,12 @@ async def decide(state: GKState, config: RunnableConfig) -> dict:
             )
         ),
     ]
+
+    # validate가 근거 검증에 실패시켜 되돌린 경우: 사유와 앞선 설명을 붙여 다시 쓴다 (재작성은 최대 1회)
+    validation = state.get("validation")
+    if validation is not None and not validation.passed and not validation.incomplete and validation.reasons:
+        previous = state.get("recommendation")
+        messages.append(rewrite_message(previous.explanation if previous is not None else "", validation.reasons))
 
     metrics = {"decide_retries": 0, "alternative_regenerations": 0, "alternative_fallbacks": 0}
     errors: list[str] = []

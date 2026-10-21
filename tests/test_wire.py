@@ -16,6 +16,7 @@ from app.agent.nodes.decide import DecideDraft
 from app.agent.nodes.history_agent import HistoryNote
 from app.agent.nodes.impact_agent import ImpactNote
 from app.agent.nodes.policy_agent import PolicyNotes
+from app.agent.nodes.validate import ValidationCheck
 from app.agent.nodes.baseline_v0 import V0Output, output_schema, to_output
 from app.agent.wire import V0Wire, WireChangeRequest, WireRecommendation
 from app.data_loader import load_requests
@@ -63,7 +64,7 @@ def test_와이어_스키마는_선택_필드가_없고_union도_한도_안이�
 
 
 @pytest.mark.parametrize(
-    ("schema", "unions"), [(RouteGuess, 0), (PolicyNotes, 0), (ImpactNote, 0), (HistoryNote, 0), (DecideDraft, 2)]
+    ("schema", "unions"), [(RouteGuess, 0), (PolicyNotes, 0), (ImpactNote, 0), (HistoryNote, 0), (ValidationCheck, 0), (DecideDraft, 2)]
 )
 def test_v1_노드의_LLM_출력_스키마는_선택_필드가_없다(schema, unions):
     """anthropic 구조화 출력은 선택 필드가 문법 상태 공간을 키운다. v1 스키마는 처음부터 필수 필드만 둔다 (선택 0)."""

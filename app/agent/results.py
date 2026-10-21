@@ -29,6 +29,19 @@ class SubagentResult(BaseModel):
     notes: list[RuleNote] = Field(default_factory=list)
 
 
+class ValidationState(BaseModel):
+    """⑤ validate의 결과 (docs/SPEC.md 2장 `validation`).
+
+    rewrites는 validate가 decide로 되돌려 보낸 횟수다(최대 1). 실패하고 재작성 기회를 다 썼으면 incomplete=True로
+    끝낸다("근거 검증 미완료"). passed=False이고 incomplete=False인 동안만 decide로 되돌아간다.
+    """
+
+    passed: bool
+    reasons: list[str] = Field(default_factory=list)
+    rewrites: int = 0
+    incomplete: bool = False
+
+
 class AlternativePlan(BaseModel):
     """decide가 조건부 대안을 문장으로 조립하기 전의 구성 요소 (리뷰 K4).
 

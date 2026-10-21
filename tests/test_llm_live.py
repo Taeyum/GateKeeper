@@ -129,19 +129,20 @@ def _anthropic_schemas() -> dict:
     from app.agent.nodes.history_agent import HistoryNote
     from app.agent.nodes.impact_agent import ImpactNote
     from app.agent.nodes.policy_agent import PolicyNotes
+    from app.agent.nodes.validate import ValidationCheck
     from app.agent.wire import V0Wire, WireChangeRequest
     from app.schemas import Recommendation
 
     return {
         "WireChangeRequest": WireChangeRequest, "Recommendation": Recommendation, "V0Wire": V0Wire,
         "RouteGuess": RouteGuess, "PolicyNotes": PolicyNotes, "ImpactNote": ImpactNote, "HistoryNote": HistoryNote,
-        "DecideDraft": DecideDraft,
+        "ValidationCheck": ValidationCheck, "DecideDraft": DecideDraft,
     }  # fmt: skip
 
 
 @pytest.mark.parametrize(
     "schema_name",
-    ["WireChangeRequest", "Recommendation", "V0Wire", "RouteGuess", "PolicyNotes", "ImpactNote", "HistoryNote", "DecideDraft"],
+    ["WireChangeRequest", "Recommendation", "V0Wire", "RouteGuess", "PolicyNotes", "ImpactNote", "HistoryNote", "ValidationCheck", "DecideDraft"],
 )
 def test_anthropic이_직접_보내는_스키마를_받아들인다(schema_name):
     """anthropic으로 직접 보내는 스키마가 실제 API에서 400 'Schema is too complex' 없이 통과해야 한다 (리뷰 J2).
