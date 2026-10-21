@@ -91,7 +91,7 @@
 요청
 
 ```json
-{ "text": "이번 주 금요일 저녁 8시에 payments-db 방화벽 좀 열어주세요. 외부 파트너사가 접속해야 해요." }
+{ "text": "10월 30일 금요일 저녁 8시에 payments-db 방화벽 좀 열어주세요. 외부 파트너사가 접속해야 해요." }
 ```
 
 반려 후 재요청은 **새 요청**으로 만든다. 같은 `request_id`를 다시 쓰지 않고, 선택 필드 `parent_request_id`에 이전 요청 번호를 보낸다. `text`는 추가 정보나 고친 내용이다. 서버는 부모의 마스킹 본문과 새 `text`를 합쳐 `parse_request`에 넣는다.
@@ -140,7 +140,7 @@
   "version": "v2",
   "requester": "김운영",
   "submitted_at": "2026-10-29T16:00:00+09:00",
-  "text": "이번 주 금요일 저녁 8시에 payments-db 방화벽 좀 열어주세요. 외부 파트너사가 접속해야 해요.",
+  "text": "10월 30일 금요일 저녁 8시에 payments-db 방화벽 좀 열어주세요. 외부 파트너사가 접속해야 해요.",
   "route": "general",
   "nodes": [
     { "node": "parse_request", "status": "done", "started_at": "2026-10-29T16:00:01+09:00", "ended_at": "2026-10-29T16:00:04+09:00", "error": null },
