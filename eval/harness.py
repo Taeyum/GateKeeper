@@ -33,6 +33,7 @@ from app.agent.prompting import file_sha256, prompt_hashes
 from app.config import PROJECT_ROOT, GKVersion, Provider, Settings, get_settings
 from app.llm.usage import UsageCollector, UsageSummary
 from app.masking import mask_secrets
+from app.rag import IndexNotReady, open_history_index
 from app.schemas import KST, LabeledRequest
 from eval.data import load_split
 from eval.evaluators import (
@@ -106,6 +107,22 @@ def check_provider_models(settings: Settings) -> None:
         )
 
 
+def check_rag_ready(settings: Settings) -> None:
+    """v2는 이력 색인과 임베딩 모델이 준비돼야 한다. 아니면 LLM을 부르기 전에 멈춘다.
+
+    색인이 없을 때 history_agent는 조용히 "확인 불가"로 끝나서 v2가 이력 없이 v1처럼 측정된다. 백그라운드 실행이면
+    아무도 그것을 못 보므로 출력이 아니라 검사로 막는다.
+    """
+    try:
+        open_history_index(settings).ready()
+    except IndexNotReady as exc:
+        raise RunConfigError(f"RAG 색인이 준비되지 않았다: {exc}") from None
+    except Exception as exc:
+        raise RunConfigError(
+            f"RAG 임베딩을 쓸 수 없다 ({type(exc).__name__}). ollama serve가 떠 있고 {settings.embed_model}이 설치돼 있는지 확인한다."
+        ) from None
+
+
 def apply_run_env(version: str, provider: str) -> Settings:
     """버전과 provider를 환경 변수로 고정하고 캐시를 비운 설정을 돌려준다 (CLAUDE.md 절대 규칙 4, 6)."""
     os.environ["LLM_PROVIDER"] = provider
@@ -167,6 +184,7 @@ def data_hashes(split: str, settings: Settings) -> dict[str, str]:
         "cmdb.json": data_dir / "data/cmdb.json",
         "change_calendar.json": data_dir / "data/change_calendar.json",
         "open_incidents.json": data_dir / "data/open_incidents.json",
+        "history.json": data_dir / "data/history.json",  # v2의 RAG 색인 원본. v0, v1은 쓰지 않아 비교 경고 대상은 아니다
         f"requests_{split}.json": data_dir / f"eval/requests_{split}.json",
     }
     return {name: file_sha256(path) for name, path in files.items()}
@@ -228,9 +246,14 @@ async def run_once(
             counters={},
         )
     latency = time.perf_counter() - started
+    # v2의 이력 검색 결과 id(정확 일치 먼저, 최대 3건). RAG 재현율@3은 이 결과로 잰다. v0, v1과 표준 변경 경로,
+    # 이력 검색이 실패한 경우는 상태에 없으므로 None이다(정답이 있는데 못 찾았으면 재현율 0으로 센다).
+    incidents = result.get("similar_incidents")
+    retrieved = [incident["history_id"] for incident in incidents] if incidents is not None else None
     return SingleRun(
-        # 이력 검색 결과(retrieved_history)는 6단계에서 history 상태가 생기면 여기서 읽는다.
-        prediction=Prediction(structured=result.get("structured"), recommendation=result.get("recommendation")),
+        prediction=Prediction(
+            structured=result.get("structured"), recommendation=result.get("recommendation"), retrieved_history=retrieved
+        ),
         latency_s=latency,
         usage=collector.snapshot(),
         counters=dict(result.get("metrics") or {}),
@@ -266,15 +289,20 @@ def build_record(split: str, case: CaseScore, run: SingleRun, judge: JudgeScore 
         "input_tokens": run.usage.input_tokens,
         "output_tokens": run.usage.output_tokens,
         "counters": run.counters,
+        # v2가 찾은 이력 id(정확 일치 먼저). RAG 재현율@3의 입력이다. ID뿐이라 eval에서도 남긴다.
+        "retrieved_history": run.prediction.retrieved_history,
     }
     if split == "dev":
         rec = run.prediction.recommendation
+        history = (run.result or {}).get("history")
         record["detail"] = {
             "structured": run.prediction.structured.model_dump(mode="json") if run.prediction.structured else None,
             "recommendation": rec.model_dump(mode="json") if rec else None,
             "judge_reason": judge.reason if judge else None,
             # 판정을 못 만든 이유 (N1). 대상 값, 작업 구간처럼 본문에서 온 값이 들어 있어 dev에만 남긴다.
             "error_detail": run.prediction.error_detail,
+            # 순수 의미 검색 상위 3건 id. 하이브리드 결과에 가려지는 의미 검색 자체의 품질을 따로 보려는 진단 값이다.
+            "semantic_ids": history.tool_output.get("semantic_ids") if history is not None and history.tool_output else None,
         }
     return record
 
@@ -333,14 +361,17 @@ async def run_evaluation(
     now: Callable[[], datetime] = lambda: datetime.now(KST),
     out: Callable[[str], None] = print,
     mcp_factory: Callable[[], MCPClient] = MCPClient,
+    rag_check: Callable[[Settings], None] = check_rag_ready,
 ) -> EvalOutcome:
     """v0은 그래프만 만든다. v1 이후는 MCP 서버를 한 번 띄워 모든 요청이 재사용하고 끝나면 닫는다.
 
     서버 기동 시간은 요청 지연에 들어가지 않는다. 서비스에서는 lifespan이 한 번 만들어 두는 것과 같은 조건이다.
-    테스트는 mcp_factory로 메모리 내 서버를 넘긴다.
+    테스트는 mcp_factory로 메모리 내 서버를, rag_check로 색인 점검 대역을 넘긴다.
     """
     settings = apply_run_env(cfg.version, cfg.provider)
     check_provider_models(settings)
+    if cfg.version == "v2":
+        rag_check(settings)
     if cfg.langsmith and not api_key_present():
         raise RunConfigError("--langsmith는 LANGCHAIN_API_KEY(또는 LANGSMITH_API_KEY)가 필요하다.")
     if cfg.limit is not None and cfg.split != "dev":

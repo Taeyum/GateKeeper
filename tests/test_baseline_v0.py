@@ -123,8 +123,11 @@ def test_프롬프트_해시는_버전이_쓰는_파일마다_나온다():
     v1 = prompt_hashes("v1")
     assert set(v1) == {"parse_request.md", "structure_rules.md", "classify.md", "policy_agent.md", "impact_agent.md", "decide.md"}
     assert v1["structure_rules.md"] == hashes["structure_rules.md"]  # v0과 v1이 구조화에 같은 지침을 받는다
+    v2 = prompt_hashes("v2")
+    assert set(v2) == set(v1) | {"history_agent.md", "decide_history.md", "validate.md"}
+    assert v2["decide.md"] == v1["decide.md"]  # v1의 decide 프롬프트는 v2에서도 그대로다 (이력 지시는 조각 파일로 따로 붙는다)
     with pytest.raises(NotImplementedError):
-        prompt_hashes("v2")
+        prompt_hashes("v9")
 
 
 def test_metrics_reducer는_키별로_더한다():

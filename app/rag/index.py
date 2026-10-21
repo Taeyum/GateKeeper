@@ -106,6 +106,11 @@ class HistoryIndex:
         if meta.get("history_sha256") != self._digest or meta.get("count") != len(self._by_id):
             raise IndexNotReady(f"색인을 만든 뒤 history.json이 바뀌었다. {hint}")
 
+    def ready(self) -> None:
+        """검색을 실제로 할 수 있는지 확인한다. check()에 더해 임베딩 한 건을 만들어 본다(Ollama 연결과 모델 설치)."""
+        self.check()
+        self._embedder.embed(["연결 확인"])
+
     def search(self, query: str, k: int = 3, where: Mapping[str, str] | None = None) -> list[RankedItem]:
         self.check()
         [vector] = self._embedder.embed([query])

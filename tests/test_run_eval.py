@@ -9,8 +9,10 @@ from app import data_loader
 from app.agent.mcp_client import MCPClient
 from app.agent.nodes.classify import RouteGuess
 from app.agent.nodes.decide import DecideDraft
+from app.agent.nodes.history_agent import HistoryNote
 from app.agent.nodes.impact_agent import ImpactNote
 from app.agent.nodes.policy_agent import PolicyNotes
+from app.agent.nodes.validate import ValidationCheck
 from app.config import get_settings
 from app.data_loader import load_requests
 from app.llm.fake import set_fake_responses, set_fake_responses_for
@@ -27,6 +29,7 @@ from eval.harness import (
 )
 from eval.run_eval import main, parse_args
 from tests._eval_guard import data_dir_with_stand_in_eval, real_eval_files_read, watch_reads
+from tests._history import make_index
 
 FIXED = datetime(2026, 10, 21, 9, 5, 7, tzinfo=KST)
 
@@ -122,6 +125,90 @@ async def test_v1_실행은_MCP_서버를_한_번_띄워_재사용하고_끝나�
     assert "alternative_fallbacks" in summary["counters"] and "parse_retries" in summary["counters"]
     records = [json.loads(line) for line in outcome.jsonl_path.read_text(encoding="utf-8").splitlines()]
     assert len(records) == 6 and all(r["self_contradiction"] is False for r in records)
+
+
+def _queue_v2(items, *, reps=1):
+    """v2 실행에 줄 fake 응답. v1 응답에 이력 요약과 근거 검증(항상 통과)을 더한다."""
+    _queue_v1(items, reps=reps)
+    runs = len(items) * reps + 1
+    set_fake_responses_for("main", HistoryNote, [HistoryNote(summary="이력 요약")] * runs)
+    set_fake_responses_for("main", ValidationCheck, [ValidationCheck(consistent=True, issues=[])] * (2 * runs))
+
+
+def _v2_factory():
+    return MCPClient(build_server(history_index=make_index()))
+
+
+async def test_v2_실행은_RAG_재현율과_검색_결과를_기록하고_validator_카운터가_합계에_들어간다(tmp_path):
+    items = load_requests("dev")[:3]  # D01(HIS-049), D02(HIS-049), D03(HIS-034): 정답 사례가 모두 있다
+    _queue_v2(items)
+    outcome = await run_evaluation(
+        _cfg(tmp_path, version="v2", judge=False), now=lambda: FIXED, out=lambda _: None,
+        mcp_factory=_v2_factory, rag_check=lambda settings: None,
+    )  # fmt: skip
+    summary, metrics = outcome.summary, outcome.summary["metrics"]
+    assert summary["meta"]["version"] == "v2" and metrics["n_runs"] == 3 and metrics["n_errors"] == 0
+    assert metrics["rag_recall_at_3"] == 1.0  # 하이브리드 결과(정확 일치 먼저)로 잰다
+    assert metrics["verdict_accuracy"] == 1.0 and metrics["risk_accuracy"] == 1.0  # 이력 상향으로 D03 위험도도 맞는다
+    assert {"history_agent.md", "validate.md", "decide_history.md"} <= set(summary["meta"]["prompt_sha256"])
+    assert "history.json" in summary["meta"]["data_sha256"]
+    records = [json.loads(line) for line in outcome.jsonl_path.read_text(encoding="utf-8").splitlines()]
+    assert [r["retrieved_history"][0] for r in records] == ["HIS-049", "HIS-049", "HIS-034"]
+    assert all(len(r["retrieved_history"]) == 3 and len(r["detail"]["semantic_ids"]) == 3 for r in records)
+
+
+async def test_v1_기록에는_검색_결과가_없다(tmp_path):
+    items = load_requests("dev")[:3]
+    _queue_v1(items)
+    outcome = await run_evaluation(
+        _cfg(tmp_path, version="v1", judge=False), now=lambda: FIXED, out=lambda _: None, mcp_factory=lambda: MCPClient(build_server())
+    )
+    records = [json.loads(line) for line in outcome.jsonl_path.read_text(encoding="utf-8").splitlines()]
+    assert all(r["retrieved_history"] is None and r["detail"]["semantic_ids"] is None for r in records)
+    assert outcome.summary["metrics"]["rag_recall_at_3"] is None
+
+
+async def test_v2는_색인_점검을_통과하지_못하면_MCP_서버도_LLM도_부르기_전에_멈춘다(tmp_path):
+    started: list[int] = []
+
+    class Probe(MCPClient):
+        async def start(self) -> None:
+            started.append(1)
+
+    def not_ready(settings):
+        raise RunConfigError("RAG 색인이 준비되지 않았다: 테스트")
+
+    with pytest.raises(RunConfigError, match="RAG 색인"):
+        await run_evaluation(_cfg(tmp_path, version="v2"), now=lambda: FIXED, out=lambda _: None, mcp_factory=Probe, rag_check=not_ready)
+    assert started == []
+
+
+def test_색인이_없으면_v2_CLI는_안내하고_종료코드_2를_낸다(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GK_RAG_DIR", str(tmp_path / "없는_색인"))
+    assert main(["--version", "v2", "--split", "dev", "--provider", "fake", "--results-dir", str(tmp_path)]) == 2
+    err = capsys.readouterr().err
+    assert "설정 오류: RAG 색인이 준비되지 않았다" in err and "sh/build_index.sh" in err
+
+
+def test_색인과_임베딩이_준비되면_점검을_통과하고_임베딩이_안_되면_원인을_알린다(tmp_path, monkeypatch):
+    from app.rag import FakeEmbedder, HistoryIndex, NumpyVectorStore, build_index
+    from eval.harness import check_rag_ready
+    from scripts.build_index import main as build_main
+
+    monkeypatch.setenv("GK_RAG_DIR", str(tmp_path))
+    data_loader.clear_caches()
+    build_main(["--dir", str(tmp_path / "history")], embedder=FakeEmbedder())
+    check_rag_ready(get_settings())  # fake provider라 FakeEmbedder로 점검한다. 예외가 없으면 통과다
+
+    class Down(FakeEmbedder):
+        def embed(self, texts):
+            raise ConnectionError("ollama에 연결할 수 없다")
+
+    monkeypatch.setattr("eval.harness.open_history_index", lambda settings: HistoryIndex(
+        NumpyVectorStore(tmp_path / "history"), Down(), list(data_loader.load_history()), tmp_path / "history" / "meta.json"
+    ))  # fmt: skip
+    with pytest.raises(RunConfigError, match=r"RAG 임베딩을 쓸 수 없다 \(ConnectionError\)"):
+        check_rag_ready(get_settings())
 
 
 async def test_v1이_판정을_못_만들어도_warm_up은_멈추지_않고_오류_실행으로_기록한다(tmp_path):

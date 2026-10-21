@@ -33,6 +33,11 @@ _WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
 _PROMPT_FILES: dict[str, tuple[str, ...]] = {
     "v0": ("baseline_v0.md", "structure_rules.md"),
     "v1": ("parse_request.md", "structure_rules.md", "classify.md", "policy_agent.md", "impact_agent.md", "decide.md"),
+    # v2는 v1에 이력 요약, decide의 이력 지시 조각, 근거 검증 프롬프트를 더한다
+    "v2": (
+        "parse_request.md", "structure_rules.md", "classify.md", "policy_agent.md", "impact_agent.md", "history_agent.md",
+        "decide.md", "decide_history.md", "validate.md",
+    ),  # fmt: skip
 }
 
 

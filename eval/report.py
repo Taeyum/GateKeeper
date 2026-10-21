@@ -186,6 +186,11 @@ DETAIL_ROWS = [
     ("  그중 reasoning 토큰 합계", lambda s: s["usage"]["reasoning_tokens_total"], _int),
     ("LLM 호출 / 실행", lambda s: s["usage"]["llm_calls_per_run"], _fixed(2)),
     ("예상 비용 / 실행 (USD)", lambda s: s["cost"]["per_run_usd"], _usd),
+    (
+        "Validator 재작성 / 미완료 (합계)",
+        lambda s: f"{s['counters'].get('validator_rewrites', 0)} / {s['counters'].get('validator_incomplete', 0)}",
+        str,
+    ),
     ("Validator 재작성, Tool 재시도 등 (합계)", lambda s: sum(s["counters"].values()) if s["counters"] else 0, _int),
     ("오류 실행 수", lambda s: s["metrics"]["n_errors"], _int),
 ]

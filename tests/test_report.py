@@ -197,6 +197,14 @@ def test_Before_After_표는_없는_버전을_대시로_두고_변화를_v0에�
     assert "| 예상 비용 / 실행 (USD) | - | - | - | - |" in table
 
 
+def test_전체_지표_표에_Validator_재작성과_미완료_횟수가_나온다():
+    v1 = make_summary("v1", counters={"parse_retries": 1})
+    v2 = make_summary("v2", counters={"validator_rewrites": 2, "validator_incomplete": 1, "parse_retries": 1})
+    table = detail_table({"v1": v1, "v2": v2})
+    assert "| Validator 재작성 / 미완료 (합계) | - | 0 / 0 | 2 / 1 |" in table
+    assert "| Validator 재작성, Tool 재시도 등 (합계) | - | 1 | 4 |" in table  # 기존 합계 행은 그대로다
+
+
 def test_자기모순_지표는_Before_After_표와_전체_지표_표에_나온다():
     v0 = make_summary("v0")
     v1 = make_summary("v1", metrics={"self_contradiction_rate": 0.0, "self_contradiction_count": 0})

@@ -135,6 +135,20 @@ def test_빈_색인이면_안내와_함께_멈춘다(history, tmp_path):
         index.search("아무거나", 3)
 
 
+def test_ready는_색인을_확인하고_임베딩_한_건을_만들어_본다(history, tmp_path):
+    store, embedder, meta_path, _ = built(history, tmp_path)
+    HistoryIndex(store, embedder, history, meta_path).ready()  # 예외가 없으면 통과다
+
+    class Down(FakeEmbedder):
+        def embed(self, texts):
+            raise ConnectionError("ollama에 연결할 수 없다")
+
+    with pytest.raises(ConnectionError):  # 색인은 멀쩡해도 임베딩이 안 되면 검색을 못 한다
+        HistoryIndex(store, Down(), history, meta_path).ready()
+    with pytest.raises(IndexNotReady):
+        HistoryIndex(NumpyVectorStore(), embedder, history).ready()  # 색인이 비어 있으면 임베딩 전에 멈춘다
+
+
 def test_meta가_없으면_멈춘다(history, tmp_path):
     store, embedder, meta_path, _ = built(history, tmp_path)
     meta_path.unlink()
