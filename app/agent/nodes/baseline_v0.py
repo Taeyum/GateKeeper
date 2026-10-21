@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from app.agent.prompting import format_submitted_at, load_prompt, render_static_context
 from app.agent.state import GKState
+from app.agent.wire import V0Wire
 from app.config import get_settings
 from app.llm.factory import get_llm, structured_llm
 from app.schemas import ChangeRequest, Recommendation
@@ -25,6 +26,18 @@ class V0Output(BaseModel):
 
     structured: ChangeRequest
     recommendation: Recommendation
+
+
+def output_schema(provider: str) -> type[BaseModel]:
+    """provider가 받아들이는 구조화 출력 스키마. anthropic은 한 번에 내는 V0Output이 스키마 복잡도 한도를 넘어서
+    (선택 필드 25, union 18) 같은 내용을 선택 필드 없이 줄인 V0Wire를 쓴다. 이유와 실측은 app/agent/wire.py 참고."""
+    return V0Wire if provider == "anthropic" else V0Output
+
+
+def to_output(result: BaseModel) -> V0Output:
+    if isinstance(result, V0Wire):
+        return V0Output(structured=result.structured.to_domain(), recommendation=result.recommendation.to_domain())
+    return result  # type: ignore[return-value]
 
 
 def build_messages(state: GKState) -> list:
@@ -40,15 +53,15 @@ def build_messages(state: GKState) -> list:
 
 async def baseline_v0(state: GKState, config: RunnableConfig) -> dict:
     settings = get_settings()
-    chain = structured_llm(get_llm("main", settings), V0Output, settings)
+    chain = structured_llm(get_llm("main", settings), output_schema(settings.llm_provider), settings)
     messages = build_messages(state)
     parse_retries = 0
     try:
-        output = await chain.ainvoke(messages, config)
+        output = to_output(await chain.ainvoke(messages, config))
     except (OutputParserException, ValueError):
         # 구조화 출력 파싱/검증 실패는 1회 재시도한다. SPEC ① parse_request와 같은 정책이라 v0과 v1이 같은 조건이다.
         parse_retries = 1
-        output = await chain.ainvoke(messages, config)
+        output = to_output(await chain.ainvoke(messages, config))
     return {
         "structured": output.structured,
         "recommendation": output.recommendation,
