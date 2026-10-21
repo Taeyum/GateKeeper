@@ -18,6 +18,7 @@ from app.agent.nodes.decide import (
     incomplete_detail,
     missing_start_sentence,
     render_decide_input,
+    render_history_section,
     retry_message,
     schedule_problems,
     time_violations,
@@ -25,7 +26,7 @@ from app.agent.nodes.decide import (
 )
 from app.agent.prompting import load_prompt
 from app.agent.results import AlternativePlan, RuleNote, SubagentResult
-from app.data_loader import load_cmdb, load_requests, load_rules
+from app.data_loader import load_cmdb, load_history, load_requests, load_rules
 from app.rules_engine.context import effective_change_type
 from app.llm.fake import set_fake_responses
 from app.llm.usage import UsageCollector
@@ -626,3 +627,97 @@ def test_재작성_요청은_엔진_위반_근거와_앞선_출력을_담는다(
     previous = draft(explanation="앞선 설명")
     text = retry_message(previous, ["CHG-01: 금요일 저녁이다"]).content
     assert "- CHG-01: 금요일 저녁이다" in text and previous.model_dump_json() in text
+
+
+# ---------------------------------------------------------------------------
+# 이력 (v2): 상향은 결정론, 판정은 그대로
+# ---------------------------------------------------------------------------
+
+
+def incidents_of(*history_ids: str) -> list[dict]:
+    by_id = {h.history_id: h for h in load_history()}
+    return [by_id[i].model_dump(mode="json") for i in history_ids]
+
+
+def with_history(*history_ids: str, has_similar: bool, status: str = "ok", summary: str = "과거 사례 요약") -> dict:
+    """history_agent가 부모 상태에 남기는 키. 실패(unavailable)이면 사례와 상향 근거는 없다."""
+    state = {"history": SubagentResult(status=status, summary=summary if status == "ok" else "이력: 확인 불가")}
+    if status == "ok":
+        state |= {"similar_incidents": incidents_of(*history_ids), "has_similar_incident": has_similar}
+    return state
+
+
+async def test_장애_이력이_있으면_위험도를_한_단계_올리고_최대는_높음이다():
+    base, _ = await run(state_for("REQ-D03"), [draft()])  # billing-db DB 변경: Tier-2라 중간
+    raised, _ = await run(state_for("REQ-D03", **with_history("HIS-034", has_similar=True)), [draft()])
+    assert base["recommendation"].risk == "중간" and raised["recommendation"].risk == "높음"
+    low, _ = await run(state_for("REQ-D05", **with_history("HIS-001", has_similar=True)), [draft()])
+    assert low["recommendation"].risk == "중간"  # Tier-3 낮음 -> 중간
+    top, _ = await run(state_for("REQ-D01", **with_history("HIS-049", has_similar=True)), [draft(), draft()])
+    assert top["recommendation"].risk == "높음"  # 이미 높음이면 그대로다
+
+
+async def test_상향_근거가_없으면_사례가_있어도_위험도를_올리지_않는다():
+    out, _ = await run(state_for("REQ-D03", **with_history("HIS-001", "HIS-002", has_similar=False)), [draft()])
+    assert out["recommendation"].risk == "중간"
+
+
+async def test_이력은_판정과_위반_인용을_바꾸지_않는다():
+    for item in load_requests("dev"):
+        plain, _ = await run(state_for(item.request_id), [draft(), draft()])
+        raised, _ = await run(state_for(item.request_id, **with_history("HIS-049", has_similar=True)), [draft(), draft()])
+        a, b = plain["recommendation"], raised["recommendation"]
+        assert (a.verdict, a.violations, a.citations) == (b.verdict, b.violations, b.citations), item.request_id
+
+
+async def test_similar_history는_찾은_사례_id이고_이력이_없거나_확인_불가면_None이다():
+    ok, _ = await run(state_for("REQ-D03", **with_history("HIS-034", "HIS-001", "HIS-002", has_similar=True)), [draft()])
+    assert ok["recommendation"].similar_history == ["HIS-034", "HIS-001", "HIS-002"]  # 정확 일치 먼저, 들어온 순서
+    v1, _ = await run(state_for("REQ-D03"), [draft()])
+    assert v1["recommendation"].similar_history is None
+    down, _ = await run(state_for("REQ-D03", **with_history(has_similar=False, status="unavailable")), [draft()])
+    assert down["recommendation"].similar_history is None
+    empty, _ = await run(state_for("REQ-D03", **with_history(has_similar=False)), [draft()])
+    assert empty["recommendation"].similar_history == []
+
+
+async def test_이력_확인_불가는_경고로_남고_위험도는_상향_없이_계산한다():
+    out, _ = await run(state_for("REQ-D03", **with_history(has_similar=False, status="unavailable")), [draft()])
+    rec = out["recommendation"]
+    assert rec.risk == "중간" and any(w.startswith("이력: 확인 불가") for w in rec.warnings)
+    ok, _ = await run(state_for("REQ-D03", **with_history("HIS-001", has_similar=False)), [draft()])
+    assert not any("이력" in w for w in ok["recommendation"].warnings)
+
+
+async def test_이력이_없는_경로는_시스템_프롬프트와_입력이_이력_도입_전과_같다(recorder):
+    """v1(그리고 표준 변경)은 history_agent가 돌지 않으므로 decide의 프롬프트와 입력이 한 글자도 바뀌지 않는다."""
+    from app.agent.prompting import render_static_context
+
+    await run(state_for("REQ-D01"), [draft(), draft()])
+    system, user = recorder[0].calls[0]
+    context = render_static_context()
+    assert system.content == load_prompt("decide.md").format(policy=context["policy"], calendar=context["calendar"])
+    assert "유사 장애 이력" not in user.content and "decide_history" not in system.content
+
+
+async def test_이력이_있는_경로는_조각_지시를_뒤에_붙이고_입력에_이력_절을_더한다(recorder):
+    from app.agent.prompting import render_static_context
+
+    await run(state_for("REQ-D03", **with_history("HIS-034", "HIS-001", has_similar=True, summary="billing-db 장애 이력이 있다")), [draft()])
+    system, user = recorder[0].calls[0]
+    context = render_static_context()
+    base = load_prompt("decide.md").format(policy=context["policy"], calendar=context["calendar"])
+    assert system.content == f"{base}\n{load_prompt('decide_history.md')}"
+    assert "이력은 판정을 바꾸지 않는다" in system.content and "사례 번호(HIS-049 같은 것)는 쓰지 않는다" in system.content
+    assert "## 유사 장애 이력\n같은 서비스와 유형의 장애 이력이 있어 코드가 위험도를 한 단계 올렸다." in user.content
+    assert "요약: billing-db 장애 이력이 있다" in user.content
+    assert "- HIS-034 (billing-db, db_change, 결과 장애)" in user.content and "교훈:" in user.content
+    assert "- 위험도: 높음" in user.content
+
+
+def test_이력_절은_상향_여부와_확인_불가를_구분해_쓴다():
+    cases = incidents_of("HIS-001")
+    assert render_history_section(None, cases, False) is None
+    assert render_history_section(SubagentResult(status="unavailable"), [], False).startswith("확인 불가 (조회에 실패했다)")
+    none = render_history_section(SubagentResult(summary="요약"), cases, False)
+    assert none.startswith("같은 서비스와 유형의 장애 이력은 없다 (위험도 상향 없음). 아래는 참고용 비슷한 사례다.")

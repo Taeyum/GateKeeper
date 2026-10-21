@@ -16,6 +16,11 @@ warnings에 쓴다 (리뷰 I2, 평가의 오인용 정의와 같다).
 준다(등록 파트너 출발지, 허용 기한 최대 일수, 변경 사유). 날짜 덧셈은 모델이 틀리고 대안 일정은 검증이나 대체로 바뀔
 수 있으므로, 만료 날짜는 모델이 EXPIRY_TOKEN만 쓰고 검증을 통과한 최종 작업일에서 코드가 채운다.
 
+이력 (v2): history_agent가 돌았으면 위험도를 한 단계 올릴지(has_similar_incident)는 이미 코드가 이력 전체에서 정했고,
+decide는 그 값을 risk_from에 넘길 뿐이다(상향은 결정론, 판정은 바뀌지 않는다). similar_history는 찾은 사례 id다.
+이력을 설명에 쓰게 하는 지시는 decide.md가 아니라 decide_history.md에 두고 history_agent가 돈 경로에서만 시스템
+프롬프트 뒤에 붙인다. v1의 프롬프트와 입력이 한 글자도 바뀌지 않아 기존 v1 측정이 그대로 유효하다.
+
 시각 누락 (리뷰 H1): 시작 시각이 없으면 엔진이 시간 조항을 검사하지 못한다. 판정은 엔진 값 그대로 두고, 확인하지 못한
 조항을 코드가 계산해 warnings와 explanation에 붙인다. 시각이 없으면 엔진이 표준 변경으로 확정하지 않으므로 자동 승인은
 나오지 않는다.
@@ -203,6 +208,26 @@ def _lines(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items) or "- 없음"
 
 
+def render_history_section(history: SubagentResult | None, incidents: list[dict], has_similar: bool) -> str | None:
+    """입력의 '유사 장애 이력' 절. history_agent가 돌지 않은 경로(v1, 표준 변경)는 None이라 입력에 절이 없다."""
+    if history is None:
+        return None
+    if history.status != "ok":
+        return "확인 불가 (조회에 실패했다). 위험도는 이력 상향 없이 계산했다."
+    head = (
+        "같은 서비스와 유형의 장애 이력이 있어 코드가 위험도를 한 단계 올렸다."
+        if has_similar
+        else "같은 서비스와 유형의 장애 이력은 없다 (위험도 상향 없음). 아래는 참고용 비슷한 사례다."
+    )
+    cases = []
+    for item in incidents:
+        line = f"- {item['history_id']} ({item['service']}, {item['change_type']}, 결과 {item['outcome']}) {item['title']}"
+        if item.get("incident"):
+            line += f" / 교훈: {item['incident']['lesson']}"
+        cases.append(line)
+    return f"{head}\n요약: {history.summary or '-'}\n" + "\n".join(cases)
+
+
 def render_decide_input(
     *,
     request: ChangeRequest,
@@ -217,6 +242,7 @@ def render_decide_input(
     impact: SubagentResult | None,
     time_violation_ids: list[str],
     needs_schedule: bool,
+    history_section: str | None = None,
 ) -> str:
     service = load_cmdb().get_service(request.target)
     window = work_window(request)
@@ -233,6 +259,7 @@ def render_decide_input(
         if needs_schedule and window
         else "아니오"
     )
+    history_block = f"## 유사 장애 이력\n{history_section}\n\n" if history_section is not None else ""
     values = (
         "## 조건에 쓸 값 (코드가 데이터에서 읽은 값. 이 밖의 값은 지어내지 않는다)\n"
         f"{render_condition_values(request, effective_type, load_rules())}\n\n"
@@ -253,6 +280,7 @@ def render_decide_input(
         "## 조항별 설명 (규정 원문을 읽은 보조 에이전트)\n"
         f"{_lines([f'{n.rule_id}: {n.note}' for n in policy.notes])}\n\n"
         f"## 영향도 요약\n{impact_text}\n\n"
+        f"{history_block}"
         f"{values}"
         f"## 일정 대안 필요: {schedule_text}"
     )
@@ -279,7 +307,11 @@ async def decide(state: GKState, config: RunnableConfig) -> dict:
     emergency_is_valid = state.get("emergency_valid")
     effective_type = effective_change_type(request.change_type, standard_id is not None)
     verdict = rules_engine.verdict_from(check.violations, standard_id is not None)
-    risk = rules_engine.risk_from(request.target, effective_type, False)
+    # 이력 상향: v2에서만 true일 수 있다. history_agent가 이력 전체에서 코드로 정한 값을 그대로 넘긴다.
+    history: SubagentResult | None = state.get("history")
+    has_similar = bool(state.get("has_similar_incident", False))
+    incidents: list[dict] = list(state.get("similar_incidents", []))
+    risk = rules_engine.risk_from(request.target, effective_type, has_similar)
 
     time_found = time_violations(check)
     window = work_window(request)
@@ -288,8 +320,11 @@ async def decide(state: GKState, config: RunnableConfig) -> dict:
     settings = get_settings()
     chain = structured_llm(get_llm("main", settings), DecideDraft, settings)
     context = render_static_context()
+    system = load_prompt("decide.md").format(policy=context["policy"], calendar=context["calendar"])
+    if history is not None:  # history_agent가 돈 경로에서만 이력 지시를 붙인다 (v1의 프롬프트는 그대로)
+        system = f"{system}\n{load_prompt('decide_history.md')}"
     messages: list[BaseMessage] = [
-        SystemMessage(content=load_prompt("decide.md").format(policy=context["policy"], calendar=context["calendar"])),
+        SystemMessage(content=system),
         HumanMessage(
             content=render_decide_input(
                 request=request,
@@ -304,6 +339,7 @@ async def decide(state: GKState, config: RunnableConfig) -> dict:
                 impact=state.get("impact"),
                 time_violation_ids=[v.rule_id for v in time_found],
                 needs_schedule=needs_schedule,
+                history_section=render_history_section(history, incidents, has_similar),
             )
         ),
     ]
@@ -385,12 +421,15 @@ async def decide(state: GKState, config: RunnableConfig) -> dict:
     impact = state.get("impact")
     if impact is not None and impact.status == "unavailable":
         warnings.append("영향도: 확인 불가 (조회에 실패했다).")
+    if history is not None and history.status == "unavailable":
+        warnings.append("이력: 확인 불가 (조회에 실패했다). 위험도는 이력 상향 없이 계산했다.")
 
     recommendation = Recommendation(
         violations=check.violations,
         verdict=verdict,
         risk=risk,
-        similar_history=None,
+        # 찾은 사례 id(정확 일치 먼저). v0, v1과 이력 검색이 실패한 경우는 None이다.
+        similar_history=[item["history_id"] for item in incidents] if history is not None and history.status == "ok" else None,
         emergency_valid=emergency_is_valid,
         post_report_required=bool(emergency_is_valid),
         explanation=explanation,
