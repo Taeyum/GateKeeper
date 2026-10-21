@@ -1,4 +1,5 @@
 {
+  "plansDirectory": "docs/plans",
   "permissions": {
     "deny": [
       "Read(**/requests_eval.json)",
