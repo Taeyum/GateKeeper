@@ -18,10 +18,12 @@
 | `request_id`, `submitted_at`, `requester`, `role` | str | 요청 메타데이터. `submitted_at`은 KST ISO 문자열 |
 | `raw_text`, `masked_text` | str | 원문과 비밀값 마스킹 결과. LLM에는 `masked_text`만 |
 | `structured` | `ChangeRequest` | ① 결과. 필드 이름은 정답 라벨 `expected.structured`와 같게 |
-| `route` | `standard` / `general` / `emergency` | ② 결과 |
-| `standard_change_id`, `emergency_valid` | str/None, bool/None | ② 결정론 확인 결과 |
-| `policy`, `impact`, `history` | 서브에이전트 결과 | ③ 결과. 각각 `tool_output`(원본)과 `summary`(LLM 요약) |
+| `route` | `standard` / `general` / `emergency` | ② 결과. 어디까지 검사를 도는지만 정한다 (판정에 영향 없음) |
+| `standard_change_id`, `emergency_valid` | str/None, bool/None | ② 결정론 확인 결과. 작은 모델과 불일치해도 엔진 확정값 그대로다 |
+| `policy`, `impact`, `history` | `SubagentResult` | ③ 결과. `tool_output`(원본), `summary`(LLM 요약), `notes`(조항별 설명, policy만), `status`(`ok`/`unavailable`) |
 | `recommendation` | `Recommendation` | ④ 결과 |
+| `alternative` | `AlternativePlan` | ④ 결과. 대안 문장을 조립하기 전의 구성 요소(검증을 통과한 시작/종료, 조건 목록, 엔진 대체 여부). 7단계 API가 `alternative_diff`를 코드로 계산할 때 쓴다 |
+| `warnings` | list | 승인자에게 보여 줄 경고. 노드마다 더하고 decide가 `Recommendation.warnings`로 옮긴다 |
 | `validation` | `{passed, reasons, rewrites}` | ⑤ 결과 |
 | `approval` | `{decision, approver, comment, at}` | ⑥ 결과 |
 | `errors` | list | 부분 실패 기록 ("영향도: 확인 불가" 등) |
@@ -42,12 +44,12 @@
 
 | 노드 | 하는 일 | 구현 메모 |
 |---|---|---|
-| ① parse_request | 자연어 → `ChangeRequest` | LLM 구조화 출력. 프롬프트에 `submitted_at`과 시간대를 넣어 "이번 주 금요일", "내일 새벽"을 풀게 한다. 본문에 없는 값은 null. 출발지 단일 IP는 /32로 정규화. Pydantic 검증 실패 시 1회 재시도 |
-| ② classify | 경로 결정 | 작은 모델이 유형과 긴급 여부를 1차 분류하고, 표준 변경 해당 여부(STD-01/02 조건)와 긴급 유효성(티켓 조회)은 결정론으로 확정. 애매하면 general(전체 검토)로 보내는 fail-safe |
-| ③ policy_agent | 규정 검사 | MCP `check_policy` 결과가 위반의 원본. LLM은 `rules://CHG-xx` 원문을 읽고 위반마다 근거 문장을 쓴다 |
-| ③ impact_agent | 영향도 | MCP `get_service_info`, `get_calendar`로 등급, 의존 서비스, 같은 시간대 변경을 요약 |
+| ① parse_request | 자연어 → `ChangeRequest` | LLM 구조화 출력. 프롬프트에 `submitted_at`과 시간대를 넣어 "이번 주 금요일", "내일 새벽"을 풀게 한다. 본문에 없는 값은 null. 출발지 단일 IP는 /32로 정규화. 검증 실패 시 1회 재시도. 구조화가 검증을 통과해도 rules.json `required_fields`에 `start`가 있는 유형(배포, DB 변경, 표준 변경)에서 작업 시각이 비었거나 대상이 CMDB에 없으면 피드백을 붙여 1회 다시 묻는다(LLM 호출은 최대 2회, 재시도 예산 하나를 공유). 다시 물어도 시각이 없으면 지어내지 않고 진행해 decide가 경고하고, 대상이 없으면 `ReviewIncomplete`로 판정을 만들지 않는다. anthropic은 `WireChangeRequest`로 받아 도메인 모델로 돌린다 |
+| ② classify | 경로 결정 | 엔진이 표준 변경 여부(STD-01/02 조건)와 긴급 유효성(티켓 조회)을 확정하고, 작은 모델은 본문만 보고 유형과 긴급 여부를 따로 분류해 parse 결과를 점검한다. 표준/긴급 여부가 다르거나 호출이 실패하면 route만 general로 돌리고(fail-safe) 엔진 확정값과 판정은 그대로 둔다. 불일치는 `warnings`에 남기고, 7단계 approval_gate는 route가 standard일 때만 자동 승인을 실행한다 |
+| ③ policy_agent | 규정 검사 | 자기 상태를 가진 컴파일된 서브그래프(`check_policy` → `read_rules` → `write_notes`). MCP `check_policy` 결과가 위반의 원본이고 `violations[].evidence`는 엔진 문장 그대로다. LLM은 `rules://CHG-xx` 원문을 읽고 조항별 쉬운 설명(`notes`)과 요약만 쓴다. 엔진 결과에 없는 조항 ID는 버린다. Tool 호출은 코드가 정한다 |
+| ③ impact_agent | 영향도 | 컴파일된 서브그래프(`lookup` → `summarize`). MCP `get_service_info`, `get_calendar`로 등급, 의존 서비스, 같은 시간대 변경을 조회해 요약. 작업 시각이 없으면 캘린더는 생략. 조회가 실패하면 "확인 불가" |
 | ③ history_agent | 이력 검토 (v2) | MCP `search_history`로 상위 3건 검색 후 요약. 같은 서비스 + 같은 유형 + 장애가 있으면 `history.bump = true` |
-| ④ decide | 판정과 설명 | 판정, 위험도는 규칙 엔진 함수로 계산. LLM은 설명과 조건부 대안을 쓴다. 대안에 일정이 있으면 규칙 엔진 `check_window`로 다시 검사하고, 위반이면 1회 재생성 후 그래도 위반이면 엔진이 찾은 가장 빠른 통과 시간대로 대체 |
+| ④ decide | 판정과 설명 | 판정(`verdict_from`), 위험도(`risk_from`, 이력 상향은 v2), 인용 조항(위반 조항 + 유효한 긴급이면 CHG-07 + 표준이면 STD id)은 코드가 계산한다. LLM은 설명, 조건 목록, 대안 일정 제안만 쓴다. 시간 조항(CHG-01, 05, 06, 10) 위반이 있으면 일정 대안이 필요하고, LLM이 낸 일정을 `check_window`로 다시 검사해 위반이거나 요청 시각 이전이거나 없으면 위반 근거를 알려 1회 재생성, 그래도 안 되면 `next_valid_window`가 찾은 가장 빠른 통과 시간대로 대체한다. 시작 시각이 없으면 확인하지 못한 시간 조항을 코드가 계산해 경고와 설명에 붙이고 판정은 엔진 값 그대로다(자동 승인은 나오지 않는다). 규정 검사를 못 얻었으면 `ReviewIncomplete`. 설명 LLM이 실패하면 엔진 근거 문장으로 만든 설명으로 대신한다 |
 | ⑤ validate | 근거 검증 (v2) | 코드: 인용한 rule_id가 존재하고 `violations`에 포함되는지. LLM Judge: 설명이 위반 목록과 모순되지 않는지. 실패 시 ④로 1회 재작성, 두 번째 실패면 `warnings`에 "근거 검증 미완료"를 붙여 진행 |
 | ⑥ approval_gate | 사람 승인 | 표준 변경이고 위반이 없으면 자동 승인. 아니면 `interrupt()`로 멈추고 승인자 결정을 기다린다. 평가 모드에서는 여기서 멈춘 상태의 `recommendation`이 측정 대상 |
 | ⑦ finalize | 확정 | trace_id가 담긴 감사 로그 JSON Lines 기록, 긴급이면 사후 보고 대상 표시 |
@@ -73,7 +75,7 @@
 | 버전 | 구성 | 비고 |
 |---|---|---|
 | v0 | LLM 노드 하나. 규정 원문 + CMDB + 변경 캘린더 + 장애 티켓 + 요청을 프롬프트에 넣고 `structured`와 `Recommendation`을 한 번에 출력 | 정보는 v1, v2와 같고 구조만 다르다. 출력 스키마가 같아 평가 코드도 같다. 과거 이력(history)은 주지 않는다. 이력은 v2의 RAG가 더하는 정보라서 위험도 상향과 `similar_history`는 v2에서만 생긴다. 출력은 규칙 엔진으로 보정하지 않는다(판정은 코드가 정한다는 원칙의 유일한 예외인 기준선) |
-| v1 | ① ② ③(policy, impact) ④ ⑥ ⑦ | RAG와 Validator 없음 |
+| v1 | ① ② ③(policy, impact) ④ (⑥ ⑦은 7단계) | RAG와 Validator 없음. 5단계 그래프는 ④ decide에서 끝나고 측정 지점(⑥ 직전)과 같다 |
 | v2 | 전체 | |
 
 ## 5. MCP 서버 (FastMCP, stdio)
@@ -153,7 +155,9 @@ app/
     prompting.py           프롬프트 파일 로드와 해시, 정적 컨텍스트 렌더링 (v0과 Judge가 공유)
     prompts/               baseline_v0.md, structure_rules.md (구조화 규칙. v0과 v1 parse_request가 공유)
     wire.py                anthropic 구조화 출력용 와이어 스키마 (선택 필드 0개. 도메인 ChangeRequest는 복잡도 한도로 거절된다. v0과 v1 parse_request가 anthropic에서 사용)
-    nodes/                 parse, classify, policy_agent, impact_agent, history_agent, decide, validate, approval, finalize, baseline_v0
+    results.py             SubagentResult, RuleNote, AlternativePlan (에이전트 안에서만 쓰는 결과 모델)
+    errors.py              ReviewIncomplete (판정을 만들지 않고 수동 검토로 넘길 때)
+    nodes/                 parse_request, classify, policy_agent, impact_agent (서브그래프), history_agent, decide, validate, approval, finalize, baseline_v0
   persistence/checkpointer.py
   api/                     main.py(lifespan), routes, deps(역할 확인), middleware(마스킹), sse
 eval/
@@ -163,6 +167,7 @@ eval/
   judge.py, judge_prompt.md  대안 품질 Judge
   tracing.py               측정 중 LangSmith 추적 켜기/끄기 (--langsmith)
   data.py                  정답셋 로더 (검증 오류에 본문이 새지 않게 감싼다)
+  rescore.py               저장된 jsonl로 측정 뒤에 정의한 지표를 다시 계산해 summary에 더한다 (LLM 재호출 없음)
   report.py                report.md와 차트 PNG
   pricing.json             모델별 단가 (직접 채움)
 results/                   summary.json, report.md, charts/ (jsonl은 git 제외)
