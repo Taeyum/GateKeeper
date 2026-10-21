@@ -64,3 +64,30 @@
 ### 참고 (반영 불필요)
 - get_calendar의 겹침 판정이 queries.py와 엔진에 따로 있는 것은 엔진 수정 금지 때문에 맞는 선택이다. 계획한 머지 후 교차 검증 테스트(get_calendar 동결 겹침과 CHG-10 일치)가 두 구현이 갈라지는 것을 잡는다. 이 테스트는 꼭 남긴다.
 - Tool 개수 5개 고정 테스트는 6단계에서 search_history를 추가할 때 6으로 바꾼다.
+
+## 2단계 (클라우드 브랜치 claude/wizardly-cerf-q9yl20) 리뷰
+
+결과: 머지 가능. GitHub에서 PR을 "Create a merge commit"으로 머지한다. squash로 머지하면 5개로 나눈 커밋이 하나로 합쳐진다. 머지 후 로컬에서 `git pull`, 그다음 H2부터 처리한다.
+
+### 리뷰어 확인 결과
+- main(7141c8d)과 브랜치(3a6fb76)를 임시 클론에서 병합: 충돌 0, `pytest -q` 347 통과, skip 0. 3단계 engine 테스트 13건이 설정 변경 없이 켜져서 통과했다(G1 자동 감지 동작 확인).
+- 독립 차분 검사: 규정 문서만 보고 따로 짠 판정기와 엔진을 무작위 요청 10,000건(유형, 대상, 시각, 출발지, 포트, 기한, 롤백/증적 null, 긴급 티켓, 표준 후보를 섞음)으로 비교했다. 위반 조항과 판정 불일치 0건, 예외 0건. eval 데이터는 쓰지 않았다.
+- 공유 인터페이스: 시그니처 그대로, schemas.py는 승인한 params 한 줄, tests/conftest.py 미수정, PROGRESS.md 미수정, eval 파일 참조 없음, 가운뎃점 없음.
+
+### H2. MCP check_policy, check_window가 엔진 ValueError를 구분된 오류로 바꾸지 않는다 (필수, 머지 직후 4단계 전에)
+- 재현(병합본, in-memory Client): `check_window(target="nope-db", ...)` → `Error calling tool 'check_window'`(가려진 내부 오류). `check_policy`에 end < start인 요청 → 같은 결과. 3단계 때는 엔진이 stub이라 드러나지 않았다.
+- 영향: 대상 오타가 NOT_FOUND가 아니라 내부 오류로 보여서 클라이언트가 MCPNotFoundError로 구분하지 못한다. 3단계 결정 기록의 "대상 없음(확정)과 서버 장애(확인 불가) 구분"이 이 두 Tool에서 깨진다.
+- 고칠 것: 두 Tool도 엔진을 부르기 전에 target을 CMDB에서 찾아 없으면 `NOT_FOUND`, 그 뒤 엔진 ValueError는 `INVALID_ARGUMENT`로 바꾼다. ValueError 메시지 문자열 매칭에 기대지 말고 target 존재 확인을 먼저 한다. check_window의 기존 end ≤ start 검사는 그대로 둔다.
+- 테스트 추가: 없는 target으로 check_policy, check_window → MCPNotFoundError. end < start인 check_policy → INVALID_ARGUMENT.
+- 커밋 한 건: `fix(mcp): 규칙 엔진 Tool의 오류를 NOT_FOUND/INVALID_ARGUMENT로 구분`
+
+### H1. 시작 시각이 없으면 시간 조항(CHG-01, 05, 06, 10)을 검사하지 않고 넘어간다 (5단계 계획에 반영)
+- 위치: app/rules_engine/context.py 43행. 엔진만 보면 맞는 처리지만, LLM이 start를 못 뽑으면 동결 기간이나 주말에 걸리는 배포가 "승인"으로 나올 수 있다. dev 라벨 10건은 모두 start가 있어서 테스트로 드러나지 않는다.
+- 근거: change_policy.md 4장은 배포, DB 변경, 표준 변경의 필수 항목에 작업 시간을 넣고 있다.
+- 5단계 계획에서 처리 방식을 제안한다. 예: ① parse_request가 이 유형의 start 누락을 필수 항목 누락으로 보고 1회 재시도, ② 그래도 없으면 decide가 "작업 시각이 없어 시간 조항을 확인하지 못함"을 설명에 넣고 자동 승인으로 끝내지 않는다(승인자 확인 필수). 판정 값을 어떻게 둘지는 계획에서 근거와 함께 묻는다. 엔진(2단계 코드)은 바꾸지 않는다.
+
+### 머지 후 로컬 정리 (H2와 별도 커밋 `docs: 2단계 결과를 진행 기록에 반영`)
+- PROGRESS.md 2단계 행: 완료, 커밋 5건(90e4951, 1ca7896, 2d57cd2, f738b8d, 3a6fb76).
+- 3단계 행의 "커밋 대기"를 실제 커밋 7건(d2f2041 ~ 7141c8d)으로 고친다.
+- docs/reports/stage2.md의 "설계 결정과 이유"를 결정 기록으로 옮긴다.
+- 남은 이슈의 "2단계 PR 머지 후" 항목을 지우고 결과(347 통과, skip 0)를 적는다. H1을 남은 이슈에 추가한다.
