@@ -26,15 +26,13 @@ PORT="${GK_API_PORT:-8100}"
 
 # ── 0) 설정 읽기 (키 값은 읽지 않고 설정 여부만 확인) ───────────────────
 # Windows의 python.exe는 줄 끝에 \r을 붙여서(HAS_KEY가 "yes\r"이 되어 키가 없다고 오판한다) tr로 지운다.
-read -r PROVIDER MAIN_MODEL SMALL_MODEL OLLAMA_URL HAS_KEY < <(python - <<'PY' | tr -d '\r'
-from app.config import get_settings
-
+# macOS 기본 bash 3.2는 프로세스 치환 안의 heredoc을 잘못 읽어(중괄호 확장, ambiguous redirect) python -c로 넘긴다.
+PY_CFG='from app.config import get_settings
 s = get_settings()
 key = {"anthropic": s.anthropic_api_key, "openai": s.openai_api_key}.get(s.llm_provider)
-print(s.llm_provider, s.model_for("main"), s.model_for("small"), s.ollama_base_url,
-      "yes" if key is not None else "no")
-PY
-)
+print(s.llm_provider, s.model_for("main"), s.model_for("small"), s.ollama_base_url, "yes" if key is not None else "no")'
+CFG_LINE="$(python -c "$PY_CFG" | tr -d '\r')"
+read -r PROVIDER MAIN_MODEL SMALL_MODEL OLLAMA_URL HAS_KEY <<< "$CFG_LINE"
 echo "provider=$PROVIDER / main=$MAIN_MODEL / small=$SMALL_MODEL"
 
 if lsof -ti:"$PORT" >/dev/null 2>&1; then
