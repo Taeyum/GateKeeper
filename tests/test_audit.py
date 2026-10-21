@@ -4,7 +4,8 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-from app.audit import AuditLog, forbidden_record, now_iso, record_of
+from app.audit import AuditLog, forbidden_record, record_of
+from app.clock import now_iso
 from app.schemas import Recommendation, Violation
 
 RECOMMENDATION = Recommendation(

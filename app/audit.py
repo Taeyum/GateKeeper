@@ -11,17 +11,11 @@ trace_id는 그래프 루트 실행의 run_id와 같은 값이라 LangSmith의 t
 import asyncio
 import json
 from collections.abc import Mapping
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.clock import now_iso
 from app.masking import mask_secrets
-from app.schemas import KST
-
-
-def now_iso() -> str:
-    """KST ISO 8601 (초 단위). API 응답의 시각 표기와 같다."""
-    return datetime.now(KST).isoformat(timespec="seconds")
 
 
 def record_of(state: Mapping[str, Any]) -> dict[str, Any]:
